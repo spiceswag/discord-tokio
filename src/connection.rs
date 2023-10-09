@@ -7,11 +7,11 @@ use websocket::stream::WebSocketStream;
 
 use serde_json;
 
-use internal::Status;
-use model::*;
+use crate::internal::Status;
+use crate::model::*;
 #[cfg(feature = "voice")]
-use voice::VoiceConnection;
-use {Error, ReceiverExt, Result, SenderExt};
+use crate::voice::VoiceConnection;
+use crate::{Error, ReceiverExt, Result, SenderExt};
 
 const GATEWAY_VERSION: u64 = 6;
 
@@ -125,10 +125,18 @@ impl Connection {
 		token: &str,
 		shard: Option<[u8; 2]>,
 	) -> Result<(Connection, ReadyEvent)> {
-		ConnectionBuilder { shard, .. ConnectionBuilder::new(base_url.to_owned(), token) }.connect()
+		ConnectionBuilder {
+			shard,
+			..ConnectionBuilder::new(base_url.to_owned(), token)
+		}
+		.connect()
 	}
 
-	fn __connect(base_url: &str, token: &str, identify: serde_json::Value) -> Result<(Connection, ReadyEvent)> {
+	fn __connect(
+		base_url: &str,
+		token: &str,
+		identify: serde_json::Value,
+	) -> Result<(Connection, ReadyEvent)> {
 		trace!("Gateway: {}", base_url);
 		// establish the websocket connection
 		let url = build_gateway_url(base_url)?;
@@ -362,23 +370,25 @@ impl Connection {
 
 	/// Reconnect after receiving an OP7 RECONNECT
 	fn reconnect(&mut self) -> Result<ReadyEvent> {
-		::sleep_ms(1000);
+		crate::sleep_ms(1000);
 		self.keepalive_channel
 			.send(Status::Aborted)
 			.expect("Could not stop the keepalive thread, there will be a thread leak.");
 		trace!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
-			if let Ok((conn, ready)) = Connection::__connect(&self.ws_url, &self.token, self.identify.clone()) {
+			if let Ok((conn, ready)) =
+				Connection::__connect(&self.ws_url, &self.token, self.identify.clone())
+			{
 				::std::mem::replace(self, conn).raw_shutdown();
 				self.session_id = Some(ready.session_id.clone());
 				return Ok(ready);
 			}
-			::sleep_ms(1000);
+			crate::sleep_ms(1000);
 		}
 
 		// If those fail, hit REST for a new endpoint
-		let url = ::Discord::from_token_raw(self.token.to_owned()).get_gateway_url()?;
+		let url = crate::Discord::from_token_raw(self.token.to_owned()).get_gateway_url()?;
 		let (conn, ready) = Connection::__connect(&url, &self.token, self.identify.clone())?;
 		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
@@ -387,7 +397,7 @@ impl Connection {
 
 	/// Resume using our existing session
 	fn resume(&mut self, session_id: String) -> Result<Event> {
-		::sleep_ms(1000);
+		crate::sleep_ms(1000);
 		trace!("Resuming...");
 		// close connection and re-establish
 		self.receiver
@@ -514,7 +524,7 @@ impl Connection {
 	///
 	/// The members lists are cleared on call, and then refilled as chunks are received. When
 	/// `unknown_members()` returns 0, the download has completed.
-	pub fn download_all_members(&mut self, state: &mut ::State) {
+	pub fn download_all_members(&mut self, state: &mut crate::State) {
 		if state.unknown_members() == 0 {
 			return;
 		}
@@ -545,11 +555,11 @@ fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
-	let mut timer = ::Timer::new(interval);
+	let mut timer = crate::Timer::new(interval);
 	let mut last_sequence = 0;
 
 	'outer: loop {
-		::sleep_ms(100);
+		crate::sleep_ms(100);
 
 		loop {
 			match channel.try_recv() {
@@ -561,7 +571,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 					last_sequence = seq;
 				}
 				Ok(Status::ChangeInterval(interval)) => {
-					timer = ::Timer::new(interval);
+					timer = crate::Timer::new(interval);
 				}
 				Ok(Status::ChangeSender(new_sender)) => {
 					sender = new_sender;
