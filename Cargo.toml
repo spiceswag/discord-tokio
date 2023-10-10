@@ -1,14 +1,15 @@
 [package]
-name = "discord"
+name = "discord-tokio"
 version = "0.9.0"
+edition = "2021"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
 
-description = "Client library for the Discord API"
+description = "Async client library for the Discord API"
 readme = "README.md"
 license = "MIT"
 keywords = ["discord", "chat", "bot", "api", "voice"]
 
-repository = "https://github.com/SpaceManiac/discord-rs"
+repository = "https://github.com/spicesw/discord-tokio"
 documentation = "https://docs.rs/discord/0.9.0"
 
 [features]
@@ -16,19 +17,19 @@ default = ["voice"]
 voice = ["opus", "sodiumoxide", "byteorder"]
 
 [dependencies]
-hyper = { version = "0.10", default-features = false }
-hyper-native-tls = "0.3.0"
+reqwest = { version = "0.11", features = ["json", "multipart"] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
 websocket = { git = "https://github.com/SpaceManiac/rust-websocket", branch = "hyper-bump" }
 bitflags = "1.2"
 byteorder = { version = "1.3", optional = true }
 log = "0.4.8"
 base64-rs = "0.1.1"
 flate2 = "1.0"
+futures = "0.3"
 opus = { version = "0.2.1", optional = true }
-multipart = { version = "0.17.0", default-features = false, features = ["client", "mock"] }
 
 [dependencies.chrono]
 version = "0.4.11"

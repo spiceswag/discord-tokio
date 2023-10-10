@@ -1,7 +1,7 @@
 use chrono::ParseError as ChronoError;
-use hyper::Error as HyperError;
 #[cfg(feature = "voice")]
 use opus::Error as OpusError;
+use reqwest::Error as ReqwestError;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use std::error::Error as StdError;
@@ -15,8 +15,8 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 /// Discord API error type.
 #[derive(Debug)]
 pub enum Error {
-	/// A `hyper` crate error
-	Hyper(HyperError),
+	/// A `reqwest` crate error
+	Reqwest(ReqwestError),
 	/// A `chrono` crate error
 	Chrono(ChronoError),
 	/// A `serde_json` crate error
@@ -33,23 +33,30 @@ pub enum Error {
 	/// A json decoding error, with a description and the offending value
 	Decode(&'static str, Value),
 	/// A generic non-success response from the REST API
-	Status(::hyper::status::StatusCode, Option<Value>),
+	Status(reqwest::StatusCode, Option<Value>),
 	/// A rate limit error, with how many milliseconds to wait before retrying
 	RateLimited(u64),
 	/// A Discord protocol error, with a description
 	Protocol(&'static str),
 	/// A command execution failure, with a command name and output
-	Command(&'static str, ::std::process::Output),
+	Command(&'static str, std::process::Output),
 	/// A miscellaneous error, with a description
 	Other(&'static str),
 }
 
 impl Error {
 	#[doc(hidden)]
-	pub fn from_response(response: ::hyper::client::Response) -> Error {
-		let status = response.status;
-		let value = ::serde_json::from_reader(response).ok();
-		if status == ::hyper::status::StatusCode::TooManyRequests {
+	pub async fn from_response(response: reqwest::Response) -> Error {
+		let status = response.status();
+
+		let value = response
+			.bytes()
+			.await
+			.ok()
+			.map(|b| serde_json::from_slice(&b).ok())
+			.flatten();
+
+		if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
 			if let Some(Value::Object(ref map)) = value {
 				if let Some(delay) = map.get("retry_after").and_then(|v| v.as_u64()) {
 					return Error::RateLimited(delay);
@@ -66,9 +73,9 @@ impl From<IoError> for Error {
 	}
 }
 
-impl From<HyperError> for Error {
-	fn from(err: HyperError) -> Error {
-		Error::Hyper(err)
+impl From<ReqwestError> for Error {
+	fn from(err: ReqwestError) -> Error {
+		Error::Reqwest(err)
 	}
 }
 
@@ -101,7 +108,7 @@ impl Display for Error {
 	#[allow(deprecated)]
 	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		match *self {
-			Error::Hyper(ref inner) => inner.fmt(f),
+			Error::Reqwest(ref inner) => inner.fmt(f),
 			Error::Chrono(ref inner) => inner.fmt(f),
 			Error::Json(ref inner) => inner.fmt(f),
 			Error::WebSocket(ref inner) => inner.fmt(f),
@@ -118,7 +125,7 @@ impl StdError for Error {
 	#[allow(deprecated)]
 	fn description(&self) -> &str {
 		match *self {
-			Error::Hyper(ref inner) => inner.description(),
+			Error::Reqwest(ref inner) => inner.description(),
 			Error::Chrono(ref inner) => inner.description(),
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
@@ -137,7 +144,7 @@ impl StdError for Error {
 
 	fn cause(&self) -> Option<&dyn StdError> {
 		match *self {
-			Error::Hyper(ref inner) => Some(inner),
+			Error::Reqwest(ref inner) => Some(inner),
 			Error::Chrono(ref inner) => Some(inner),
 			Error::Json(ref inner) => Some(inner),
 			Error::WebSocket(ref inner) => Some(inner),
@@ -146,5 +153,44 @@ impl StdError for Error {
 			Error::Opus(ref inner) => Some(inner),
 			_ => None,
 		}
+	}
+}
+
+/// Extension trait for checking the status and discarding failed discord HTTP requests.
+pub(crate) trait CheckStatus {
+	/// Convert non-success hyper statuses to discord crate errors, tossing info.
+	async fn check_status(self) -> Result<reqwest::Response>;
+}
+
+impl CheckStatus for reqwest::Result<reqwest::Response> {
+	async fn check_status(self) -> Result<reqwest::Response> {
+		let response = self?;
+		if !response.status().is_success() {
+			return Err(Error::from_response(response).await);
+		}
+		Ok(response)
+	}
+}
+
+/// Extension trait for checking the status dumping unexpected discord HTTP requests.
+pub(crate) trait StatusChecks {
+	/// Validate a request that is expected to return 204 No Content and print
+	/// debug information if it does not.
+	async fn insure_no_content(self) -> Result<()>;
+}
+
+impl StatusChecks for reqwest::Response {
+	async fn insure_no_content(self) -> Result<()> {
+		if self.status() != reqwest::StatusCode::NO_CONTENT {
+			debug!("Expected 204 No Content, got {}", self.status());
+
+			for (header_name, header_value) in self.headers().iter() {
+				debug!("Header: {}: {:?}", header_name, header_value);
+			}
+
+			let content = self.bytes().await?;
+			debug!("Content: {:?}", content);
+		}
+		Ok(())
 	}
 }

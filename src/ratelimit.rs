@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use chrono::prelude::*;
-use hyper;
 
 use crate::{Error, Result};
 
@@ -32,8 +31,8 @@ impl RateLimits {
 
 	/// Update based on rate limit headers in the response for given URL.
 	/// Returns `true` if the request was rate limited and should be retried.
-	pub fn post_update(&self, url: &str, response: &hyper::client::Response) -> bool {
-		if response.headers.get_raw("X-RateLimit-Global").is_some() {
+	pub fn post_update(&self, url: &str, response: &reqwest::Response) -> bool {
+		if response.headers().get("X-RateLimit-Global").is_some() {
 			self.global
 				.lock()
 				.expect("Rate limits poisoned")
@@ -88,7 +87,7 @@ impl RateLimit {
 		self.remaining -= 1;
 	}
 
-	fn post_update(&mut self, response: &hyper::client::Response) -> bool {
+	fn post_update(&mut self, response: &reqwest::Response) -> bool {
 		match self.try_post_update(response) {
 			Err(e) => {
 				error!("rate limit checking error: {}", e);
@@ -98,18 +97,18 @@ impl RateLimit {
 		}
 	}
 
-	fn try_post_update(&mut self, response: &hyper::client::Response) -> Result<bool> {
-		if let Some(reset) = read_header(&response.headers, "X-RateLimit-Reset")? {
+	fn try_post_update(&mut self, response: &reqwest::Response) -> Result<bool> {
+		if let Some(reset) = read_header(&response.headers(), "X-RateLimit-Reset")? {
 			self.reset = reset;
 		}
-		if let Some(limit) = read_header(&response.headers, "X-RateLimit-Limit")? {
+		if let Some(limit) = read_header(&response.headers(), "X-RateLimit-Limit")? {
 			self.limit = limit;
 		}
-		if let Some(remaining) = read_header(&response.headers, "X-RateLimit-Remaining")? {
+		if let Some(remaining) = read_header(&response.headers(), "X-RateLimit-Remaining")? {
 			self.remaining = remaining;
 		}
-		if response.status == hyper::status::StatusCode::TooManyRequests {
-			if let Some(delay) = read_header(&response.headers, "Retry-After")? {
+		if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+			if let Some(delay) = read_header(&response.headers(), "Retry-After")? {
 				let delay = delay as u64 + 100; // 100ms of leeway
 				warn!("429: sleeping for {}ms", delay);
 				crate::sleep_ms(delay);
@@ -120,11 +119,11 @@ impl RateLimit {
 	}
 }
 
-fn read_header(headers: &hyper::header::Headers, name: &str) -> Result<Option<i64>> {
-	match headers.get_raw(name) {
+fn read_header(headers: &reqwest::header::HeaderMap, name: &str) -> Result<Option<i64>> {
+	match headers.get(name) {
 		Some(hdr) => {
 			if hdr.len() == 1 {
-				match std::str::from_utf8(&hdr[0]) {
+				match std::str::from_utf8(hdr.as_bytes()) {
 					Ok(text) => match text.parse::<i64>() {
 						Ok(val) => Ok(Some(val)),
 						Err(_) => match text.parse::<f64>() {

@@ -292,7 +292,7 @@ impl Connection {
 	}
 
 	/// Receive an event over the websocket, blocking until one is available.
-	pub fn recv_event(&mut self) -> Result<Event> {
+	pub async fn recv_event(&mut self) -> Result<Event> {
 		loop {
 			match self.receiver.recv_json(GatewayEvent::decode) {
 				Err(Error::WebSocket(err)) => {
@@ -305,7 +305,7 @@ impl Connection {
 						}
 					}
 					// If resuming didn't work, reconnect
-					return self.reconnect().map(Event::Ready);
+					return self.reconnect().await.map(Event::Ready);
 				}
 				Err(Error::Closed(num, message)) => {
 					debug!("Closure, reconnecting: {:?}: {}", num, message);
@@ -319,7 +319,7 @@ impl Connection {
 						}
 					}
 					// If resuming didn't work, reconnect
-					return self.reconnect().map(Event::Ready);
+					return self.reconnect().await.map(Event::Ready);
 				}
 				Err(error) => return Err(error),
 				Ok(GatewayEvent::Hello(interval)) => {
@@ -355,7 +355,7 @@ impl Connection {
 				}
 				Ok(GatewayEvent::HeartbeatAck) => {}
 				Ok(GatewayEvent::Reconnect) => {
-					return self.reconnect().map(Event::Ready);
+					return self.reconnect().await.map(Event::Ready);
 				}
 				Ok(GatewayEvent::InvalidateSession) => {
 					debug!("Session invalidated, reidentifying");
@@ -369,7 +369,7 @@ impl Connection {
 	}
 
 	/// Reconnect after receiving an OP7 RECONNECT
-	fn reconnect(&mut self) -> Result<ReadyEvent> {
+	async fn reconnect(&mut self) -> Result<ReadyEvent> {
 		crate::sleep_ms(1000);
 		self.keepalive_channel
 			.send(Status::Aborted)
@@ -388,7 +388,9 @@ impl Connection {
 		}
 
 		// If those fail, hit REST for a new endpoint
-		let url = crate::Discord::from_token_raw(self.token.to_owned()).get_gateway_url()?;
+		let url = crate::Discord::from_token_raw(self.token.to_owned())
+			.get_gateway_url()
+			.await?;
 		let (conn, ready) = Connection::__connect(&url, &self.token, self.identify.clone())?;
 		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
