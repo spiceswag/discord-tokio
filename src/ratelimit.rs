@@ -1,6 +1,6 @@
-use std;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use std::{self, time::Duration};
 
 use chrono::prelude::*;
 
@@ -8,6 +8,7 @@ use crate::{Error, Result};
 
 #[derive(Default)]
 pub struct RateLimits {
+    // Mutexes here are expected to have basically 0 wait time
     global: Mutex<RateLimit>,
     endpoints: Mutex<BTreeMap<String, RateLimit>>,
 }
@@ -31,12 +32,13 @@ impl RateLimits {
 
     /// Update based on rate limit headers in the response for given URL.
     /// Returns `true` if the request was rate limited and should be retried.
-    pub fn post_update(&self, url: &str, response: &reqwest::Response) -> bool {
+    pub async fn post_update(&self, url: &str, response: &reqwest::Response) -> bool {
         if response.headers().get("X-RateLimit-Global").is_some() {
             self.global
                 .lock()
                 .expect("Rate limits poisoned")
                 .post_update(response)
+                .await
         } else {
             self.endpoints
                 .lock()
@@ -44,6 +46,7 @@ impl RateLimits {
                 .entry(url.to_owned())
                 .or_insert_with(RateLimit::default)
                 .post_update(response)
+                .await
         }
     }
 }
@@ -56,7 +59,7 @@ struct RateLimit {
 }
 
 impl RateLimit {
-    fn pre_check(&mut self) {
+    async fn pre_check(&mut self) {
         // break out if uninitialized
         if self.limit == 0 {
             return;
@@ -77,7 +80,7 @@ impl RateLimit {
             // 900ms in case "difference" is off by 1
             let delay = difference as u64 * 1000 + 900;
             warn!("pre-ratelimit: sleeping for {}ms", delay);
-            crate::sleep_ms(delay);
+            tokio::time::sleep(Duration::from_millis(delay)).await;
             return;
         }
 
@@ -87,8 +90,8 @@ impl RateLimit {
         self.remaining -= 1;
     }
 
-    fn post_update(&mut self, response: &reqwest::Response) -> bool {
-        match self.try_post_update(response) {
+    async fn post_update(&mut self, response: &reqwest::Response) -> bool {
+        match self.try_post_update(response).await {
             Err(e) => {
                 error!("rate limit checking error: {}", e);
                 false
@@ -97,7 +100,7 @@ impl RateLimit {
         }
     }
 
-    fn try_post_update(&mut self, response: &reqwest::Response) -> Result<bool> {
+    async fn try_post_update(&mut self, response: &reqwest::Response) -> Result<bool> {
         if let Some(reset) = read_header(&response.headers(), "X-RateLimit-Reset")? {
             self.reset = reset;
         }
@@ -111,7 +114,7 @@ impl RateLimit {
             if let Some(delay) = read_header(&response.headers(), "Retry-After")? {
                 let delay = delay as u64 + 100; // 100ms of leeway
                 warn!("429: sleeping for {}ms", delay);
-                crate::sleep_ms(delay);
+                tokio::time::sleep(Duration::from_millis(delay)).await;
                 return Ok(true); // retry the request
             }
         }

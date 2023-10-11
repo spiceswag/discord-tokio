@@ -48,8 +48,7 @@ extern crate opus;
 #[cfg(feature = "voice")]
 extern crate sodiumoxide;
 
-use std::collections::BTreeMap;
-use std::time;
+use std::{collections::BTreeMap, time};
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -291,7 +290,7 @@ impl Discord {
 
         let result = retry(&mut f2).await;
         if let Ok(response) = result.as_ref() {
-            if self.rate_limits.post_update(url, response) {
+            if self.rate_limits.post_update(url, response).await {
                 // we were rate limited, we have slept, it is time to retry
                 // the request once. if it fails the second time, give up
                 debug!("Retrying after having been ratelimited");
@@ -1895,10 +1894,6 @@ fn resolve_invite(invite: &str) -> &str {
     } else {
         invite
     }
-}
-
-fn sleep_ms(millis: u64) {
-    std::thread::sleep(time::Duration::from_millis(millis))
 }
 
 // Timer that remembers when it is supposed to go off

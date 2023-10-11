@@ -1,6 +1,7 @@
 #[cfg(feature = "voice")]
 use std::collections::HashMap;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use websocket::client::{Client, Receiver, Sender};
 use websocket::stream::WebSocketStream;
@@ -92,7 +93,7 @@ impl<'a> ConnectionBuilder<'a> {
             "op": 2,
             "d": d
         }};
-        Connection::__connect(&self.base_url, self.token.clone(), identify)
+        Connection::establish_connection(&self.base_url, self.token.clone(), identify)
     }
 }
 
@@ -132,7 +133,7 @@ impl Connection {
         .connect()
     }
 
-    fn __connect(
+    fn establish_connection(
         base_url: &str,
         token: &str,
         identify: serde_json::Value,
@@ -299,7 +300,7 @@ impl Connection {
                     warn!("Websocket error, reconnecting: {:?}", err);
                     // Try resuming if we haven't received an InvalidateSession
                     if let Some(session_id) = self.session_id.clone() {
-                        match self.resume(session_id) {
+                        match self.resume(session_id).await {
                             Ok(event) => return Ok(event),
                             Err(e) => debug!("Failed to resume: {:?}", e),
                         }
@@ -312,7 +313,7 @@ impl Connection {
                     // Try resuming if we haven't received a 4006 or an InvalidateSession
                     if num != Some(4006) {
                         if let Some(session_id) = self.session_id.clone() {
-                            match self.resume(session_id) {
+                            match self.resume(session_id).await {
                                 Ok(event) => return Ok(event),
                                 Err(e) => debug!("Failed to resume: {:?}", e),
                             }
@@ -370,7 +371,7 @@ impl Connection {
 
     /// Reconnect after receiving an OP7 RECONNECT
     async fn reconnect(&mut self) -> Result<ReadyEvent> {
-        crate::sleep_ms(1000);
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         self.keepalive_channel
             .send(Status::Aborted)
             .expect("Could not stop the keepalive thread, there will be a thread leak.");
@@ -378,28 +379,29 @@ impl Connection {
         // Make two attempts on the current known gateway URL
         for _ in 0..2 {
             if let Ok((conn, ready)) =
-                Connection::__connect(&self.ws_url, &self.token, self.identify.clone())
+                Connection::establish_connection(&self.ws_url, &self.token, self.identify.clone())
             {
                 ::std::mem::replace(self, conn).raw_shutdown();
                 self.session_id = Some(ready.session_id.clone());
                 return Ok(ready);
             }
-            crate::sleep_ms(1000);
+            tokio::time::sleep(Duration::from_millis(1000)).await;
         }
 
         // If those fail, hit REST for a new endpoint
         let url = crate::Discord::from_token_raw(self.token.to_owned())
             .get_gateway_url()
             .await?;
-        let (conn, ready) = Connection::__connect(&url, &self.token, self.identify.clone())?;
+        let (conn, ready) =
+            Connection::establish_connection(&url, &self.token, self.identify.clone())?;
         ::std::mem::replace(self, conn).raw_shutdown();
         self.session_id = Some(ready.session_id.clone());
         Ok(ready)
     }
 
     /// Resume using our existing session
-    fn resume(&mut self, session_id: String) -> Result<Event> {
-        crate::sleep_ms(1000);
+    async fn resume(&mut self, session_id: String) -> Result<Event> {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         trace!("Resuming...");
         // close connection and re-establish
         self.receiver
@@ -556,12 +558,16 @@ fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
         .map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
-fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
+async fn keepalive(
+    interval: u64,
+    mut sender: Sender<WebSocketStream>,
+    channel: mpsc::Receiver<Status>,
+) {
     let mut timer = crate::Timer::new(interval);
     let mut last_sequence = 0;
 
     'outer: loop {
-        crate::sleep_ms(100);
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         loop {
             match channel.try_recv() {
