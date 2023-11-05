@@ -1,18 +1,16 @@
 #[cfg(feature = "voice")]
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::time::Duration;
-
-use websocket::client::{Client, Receiver, Sender};
-use websocket::stream::WebSocketStream;
+use std::{pin::pin, sync::mpsc};
 
 use serde_json;
+use websocket::ClientBuilder;
 
 use crate::internal::Status;
 use crate::model::*;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceConnection;
-use crate::{Error, ReceiverExt, Result, SenderExt};
+use crate::{Error, Result};
 
 const GATEWAY_VERSION: u64 = 6;
 
@@ -69,13 +67,13 @@ impl<'a> ConnectionBuilder<'a> {
     ///
     /// Also returns the `ReadyEvent` sent by Discord upon establishing the
     /// connection, which contains the initial state as seen by the client.
-    pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
+    pub async fn connect(&self) -> Result<(Connection, ReadyEvent)> {
         let mut d = json! {{
             "token": self.token,
             "properties": {
                 "$os": ::std::env::consts::OS,
                 "$browser": "Discord library for Rust",
-                "$device": "discord-rs",
+                "$device": "discord-tokio",
                 "$referring_domain": "",
                 "$referrer": "",
             },
@@ -93,7 +91,7 @@ impl<'a> ConnectionBuilder<'a> {
             "op": 2,
             "d": d
         }};
-        Connection::establish_connection(&self.base_url, self.token.clone(), identify)
+        Connection::establish_connection(&self.base_url, self.token.clone(), identify).await
     }
 }
 
@@ -121,7 +119,7 @@ impl Connection {
     /// Usually called internally by `Discord::connect`, which provides both
     /// the token and URL and an optional user-given shard ID and total shard
     /// count.
-    pub fn new(
+    pub async fn new(
         base_url: &str,
         token: &str,
         shard: Option<[u8; 2]>,
@@ -131,17 +129,21 @@ impl Connection {
             ..ConnectionBuilder::new(base_url.to_owned(), token)
         }
         .connect()
+        .await
     }
 
-    fn establish_connection(
+    async fn establish_connection(
         base_url: &str,
         token: &str,
         identify: serde_json::Value,
     ) -> Result<(Connection, ReadyEvent)> {
         trace!("Gateway: {}", base_url);
+
         // establish the websocket connection
         let url = build_gateway_url(base_url)?;
-        let response = Client::connect(url)?.send()?;
+        let future = ClientBuilder::from_url(&url).async_connect_secure(None);
+
+        let response = future.await;
         response.validate()?;
         let (mut sender, mut receiver) = response.begin().split();
 
@@ -553,8 +555,8 @@ impl Drop for Connection {
 }
 
 #[inline]
-fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
-    ::websocket::client::request::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
+fn build_gateway_url(base: &str) -> Result<::websocket::url::Url> {
+    websocket::url::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
         .map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
