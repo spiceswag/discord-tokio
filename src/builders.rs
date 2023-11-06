@@ -21,12 +21,12 @@ macro_rules! builder {
             impl $name {
                 #[doc(hidden)]
                 #[inline(always)]
-                pub fn __build<F: FnOnce($name) -> $name>(f: F) -> $inner where $inner: Default {
-                    Self::__apply(f, Default::default())
+                pub fn build<F: FnOnce($name) -> $name>(f: F) -> $inner where $inner: Default {
+                    Self::apply(f, Default::default())
                 }
 
                 #[doc(hidden)]
-                pub fn __apply<F: FnOnce($name) -> $name>(f: F, inp: $inner) -> $inner {
+                pub fn apply<F: FnOnce($name) -> $name>(f: F, inp: $inner) -> $inner {
                     f($name(inp)).0
                 }
 
@@ -274,12 +274,12 @@ impl SendMessage {
 
     /// Embed rich content.
     pub fn embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(self, f: F) -> Self {
-        set!(self, "embed", EmbedBuilder::__build(f))
+        set!(self, "embed", EmbedBuilder::build(f))
     }
 
     /// Restrict allowed mentions for this message.
     pub fn allowed_mentions<F: FnOnce(AllowedMentions) -> AllowedMentions>(self, f: F) -> Self {
-        set!(self, "allowed_mentions", AllowedMentions::__build(f))
+        set!(self, "allowed_mentions", AllowedMentions::build(f))
     }
 
     /// Reply to the given message, optionally mentioning the sender.
@@ -345,7 +345,7 @@ impl EmbedBuilder {
 
     /// Add "footer information". See the `EmbedFooterBuilder` struct for the editable fields.
     pub fn footer<F: FnOnce(EmbedFooterBuilder) -> EmbedFooterBuilder>(self, f: F) -> Self {
-        set!(self, "footer", EmbedFooterBuilder::__build(f))
+        set!(self, "footer", EmbedFooterBuilder::build(f))
     }
 
     /// Add "source url of image". Only supports http(s).
@@ -360,12 +360,12 @@ impl EmbedBuilder {
 
     /// Add "author information". See the `EmbedAuthorBuilder` struct for the editable fields.
     pub fn author<F: FnOnce(EmbedAuthorBuilder) -> EmbedAuthorBuilder>(self, f: F) -> Self {
-        set!(self, "author", EmbedAuthorBuilder::__build(f))
+        set!(self, "author", EmbedAuthorBuilder::build(f))
     }
 
     /// Add "fields information". See the `EmbedFieldsBuilder` struct for the editable fields.
     pub fn fields<F: FnOnce(EmbedFieldsBuilder) -> EmbedFieldsBuilder>(self, f: F) -> Self {
-        set!(self, "fields", EmbedFieldsBuilder::__build(f))
+        set!(self, "fields", EmbedFieldsBuilder::build(f))
     }
 }
 

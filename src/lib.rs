@@ -28,11 +28,6 @@
 #![allow(deprecated)]
 #![feature(async_fn_in_trait)]
 
-extern crate base64;
-extern crate chrono;
-extern crate flate2;
-extern crate serde;
-extern crate websocket;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
@@ -400,7 +395,7 @@ impl Discord {
             Channel::News => {}
             Channel::Store => {}
         };
-        let map = EditChannel::__apply(f, map);
+        let map = EditChannel::apply(f, map);
 
         let json = self
             .request(&format!("/channels/{channel}"), Method::PATCH, |req| {
@@ -512,7 +507,7 @@ impl Discord {
         channel: ChannelId,
         builder: F,
     ) -> Result<Message> {
-        let map = SendMessage::__build(builder);
+        let map = SendMessage::build(builder);
 
         Ok(self
             .request(
@@ -538,7 +533,7 @@ impl Discord {
         message: MessageId,
         builder: F,
     ) -> Result<Message> {
-        let map = SendMessage::__build(builder);
+        let map = SendMessage::build(builder);
 
         Ok(self
             .request(
@@ -673,7 +668,7 @@ impl Discord {
     {
         let url = format!("/channels/{channel}/messages");
 
-        let message_data = SendMessage::__build(builder);
+        let message_data = SendMessage::build(builder);
         let json_part = reqwest::multipart::Part::bytes(serde_json::to_vec(&message_data)?)
             .mime_str("application/json")?;
 
@@ -1078,7 +1073,7 @@ impl Discord {
         server_id: ServerId,
         f: F,
     ) -> Result<Server> {
-        let map = EditServer::__build(f);
+        let map = EditServer::build(f);
 
         Ok(self
             .request(&format!("/guilds/{server_id}"), Method::PATCH, |req| {
@@ -1350,7 +1345,7 @@ impl Discord {
         user: UserId,
         f: F,
     ) -> Result<()> {
-        let map = EditMember::__build(f);
+        let map = EditMember::build(f);
 
         self.request(
             &format!("/guilds/{server}/members/{user}"),
@@ -1432,7 +1427,7 @@ impl Discord {
         server: ServerId,
         f: F,
     ) -> Result<Role> {
-        let map = EditRole::__build(f);
+        let map = EditRole::build(f);
 
         let response = self
             .request(&format!("/guilds/{server}/roles"), Method::POST, |req| {
@@ -1451,7 +1446,7 @@ impl Discord {
         role: RoleId,
         f: F,
     ) -> Result<Role> {
-        let map = EditRole::__build(f);
+        let map = EditRole::build(f);
 
         let response = self
             .request(
@@ -1581,7 +1576,7 @@ impl Discord {
         map.insert("avatar".into(), json!(user.avatar));
 
         // Then, send the profile patch.
-        let map = EditProfile::__apply(f, map);
+        let map = EditProfile::apply(f, map);
 
         Ok(self
             .request("/user/@me", Method::PATCH, |req| req.json(&map))
@@ -1617,7 +1612,7 @@ impl Discord {
         }
 
         // Then, send the profile patch.
-        let map = EditUserProfile::__apply(f, map);
+        let map = EditUserProfile::apply(f, map);
 
         let mut json: Object = self
             .request("/user/@me", Method::PATCH, |req| req.json(&map))
