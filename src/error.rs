@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::error::Error as StdError;
 use std::fmt::Display;
 use std::io::Error as IoError;
-use websocket::result::WebSocketError;
+use websockets::WebSocketError;
 
 /// Discord API `Result` alias type.
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -21,7 +21,7 @@ pub enum Error {
     Chrono(ChronoError),
     /// A `serde_json` crate error
     Json(JsonError),
-    /// A `websocket` crate error
+    /// A `websockets` crate error
     WebSocket(WebSocketError),
     /// A `std::io` module error
     Io(IoError),
@@ -38,8 +38,6 @@ pub enum Error {
     RateLimited(u64),
     /// A Discord protocol error, with a description
     Protocol(&'static str),
-    /// A command execution failure, with a command name and output
-    Command(&'static str, std::process::Output),
     /// A miscellaneous error, with a description
     Other(&'static str),
 }
@@ -115,7 +113,6 @@ impl Display for Error {
             Error::Io(ref inner) => inner.fmt(f),
             #[cfg(feature = "voice")]
             Error::Opus(ref inner) => inner.fmt(f),
-            Error::Command(cmd, _) => write!(f, "Command failed: {}", cmd),
             _ => f.write_str(self.description()),
         }
     }
@@ -138,7 +135,6 @@ impl StdError for Error {
                 .canonical_reason()
                 .unwrap_or("Unknown bad HTTP status"),
             Error::RateLimited(_) => "Rate limited",
-            Error::Command(_, _) => "Command failed",
         }
     }
 

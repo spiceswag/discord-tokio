@@ -49,6 +49,7 @@ type Object = serde_json::Map<String, serde_json::Value>;
 
 mod connection;
 mod error;
+mod io;
 mod ratelimit;
 mod state;
 #[cfg(feature = "voice")]
@@ -1740,7 +1741,7 @@ impl Discord {
     ///
     /// See `connect_sharded` if you want to use guild sharding.
     pub async fn connect(&self) -> Result<(Connection, ReadyEvent)> {
-        self.connection_builder().await?.connect()
+        self.connection_builder().await?.connect().await
     }
 
     /// Establish a sharded websocket connection over which events can be
@@ -1761,6 +1762,7 @@ impl Discord {
             .await?
             .with_shard(shard_id, total_shards)
             .connect()
+            .await
     }
 
     /// Prepare to establish a websocket connection over which events can be

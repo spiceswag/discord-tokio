@@ -3,9 +3,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 use std::{pin::pin, sync::mpsc};
 
-use serde_json;
-use websocket::ClientBuilder;
-
 use crate::internal::Status;
 use crate::model::*;
 #[cfg(feature = "voice")]
@@ -472,9 +469,6 @@ impl Connection {
 
     // called from shutdown() and drop()
     fn inner_shutdown(&mut self) -> Result<()> {
-        use std::io::Write;
-        use websocket::Sender as S;
-
         // Hacky horror: get the WebSocketStream from the Receiver and formally close it
         let stream = self.receiver.get_mut().get_mut();
         Sender::new(stream.by_ref(), true)
