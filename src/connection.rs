@@ -1,9 +1,15 @@
 #[cfg(feature = "voice")]
 use std::collections::HashMap;
 use std::time::Duration;
-use std::{pin::pin, sync::mpsc};
 
-use crate::internal::Status;
+use futures::{SinkExt, StreamExt};
+use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio::time::MissedTickBehavior;
+use websockets::{WebSocket, WebSocketReadHalf};
+
+use crate::io::SharedSink;
+use crate::io::{JsonSink, JsonStream, JsonStreamError};
 use crate::model::*;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceConnection;
@@ -50,12 +56,12 @@ impl<'a> ConnectionBuilder<'a> {
     /// Connect to only a specific shard.
     ///
     /// The `shard_id` is indexed at 0 while `total_shards` is indexed at 1.
-    pub fn with_shard(&mut self, shard_id: u8, total_shards: u8) -> &mut Self {
+    pub fn sharding(&mut self, shard_id: u8, total_shards: u8) -> &mut Self {
         self.shard = Some([shard_id, total_shards]);
         self
     }
 
-    pub fn with_intents(&mut self, intents: Intents) -> &mut Self {
+    pub fn intents(&mut self, intents: Intents) -> &mut Self {
         self.intents = Some(intents);
         self
     }
@@ -92,19 +98,28 @@ impl<'a> ConnectionBuilder<'a> {
     }
 }
 
-/// Websocket connection to the Discord servers.
+/// An active WebSocket connection to the Discord gateway.
+#[derive(Debug)]
 pub struct Connection {
-    keepalive_channel: mpsc::Sender<Status>,
-    receiver: Receiver<WebSocketStream>,
+    /// Receiver of raw JSON events from the Discord gateway.
+    receiver: JsonStream<Value>,
+    /// Shared sender for sending presence updates and the similar.
+    sender: SharedSink<JsonSink, Value>,
+
     #[cfg(feature = "voice")]
     voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
+
+    /// The user ID of the user logged in the Voice Gateway?
     #[cfg(feature = "voice")]
     user_id: UserId,
-    ws_url: String,
-    token: String,
+
+    /// The ID of this current session.
+    ///
+    /// Used to reconnect to Discord and continue event sending where we left off.
     session_id: Option<String>,
-    last_sequence: u64,
-    identify: serde_json::Value,
+
+    /// How to reconnect to Discord
+    reconnect: ReconnectData,
 }
 
 impl Connection {
@@ -129,6 +144,7 @@ impl Connection {
         .await
     }
 
+    /// Establish a connection to Discord
     async fn establish_connection(
         base_url: &str,
         token: &str,
@@ -137,46 +153,78 @@ impl Connection {
         trace!("Gateway: {}", base_url);
 
         // establish the websocket connection
-        let url = build_gateway_url(base_url)?;
-        let future = ClientBuilder::from_url(&url).async_connect_secure(None);
+        let url = build_gateway_url(base_url);
+        let ws = WebSocket::connect(&url).await?;
 
-        let response = future.await;
-        response.validate()?;
-        let (mut sender, mut receiver) = response.begin().split();
+        let (receiver, sender) = ws.split();
+        let mut receiver = JsonStream::<Value>::new(receiver);
+        let mut sender = JsonSink::new(sender);
 
         // send the handshake
-        sender.send_json(&identify)?;
+        sender.send(&identify).await.map_err(|err| match err {
+            JsonStreamError::Ws(ws) => Error::WebSocket(ws),
+            JsonStreamError::Json(json) => Error::Json(json),
+        })?;
 
         // read the Hello and spawn the keepalive thread
-        let heartbeat_interval;
-        match receiver.recv_json(GatewayEvent::decode)? {
-            GatewayEvent::Hello(interval) => heartbeat_interval = interval,
+        let hello = match receiver.next().await {
+            Some(Ok(json)) => GatewayEvent::decode(json),
+            Some(Err(err)) => Err(err)?,
+            None => {
+                return Err(Error::WebSocket(
+                    websockets::WebSocketError::WebSocketClosedError,
+                ))
+            }
+        }?;
+
+        let heartbeat_interval = match hello {
+            GatewayEvent::Hello(interval) => interval,
             other => {
                 debug!("Unexpected event: {:?}", other);
                 return Err(Error::Protocol("Expected Hello during handshake"));
             }
-        }
+        };
 
-        let (tx, rx) = mpsc::channel();
-        ::std::thread::Builder::new()
-            .name("Discord Keepalive".into())
-            .spawn(move || keepalive(heartbeat_interval, sender, rx))?;
+        let (sequence_send, sequence_recv) = mpsc::channel(16);
+        let mut shared_sender = SharedSink::new(sender);
+
+        tokio::spawn(heartbeat(
+            Duration::from_millis(heartbeat_interval),
+            shared_sender.clone(),
+            sequence_recv,
+        ));
 
         // read the Ready event
-        let sequence;
-        let ready;
-        match receiver.recv_json(GatewayEvent::decode)? {
+        let ready = match receiver.next().await {
+            Some(Ok(json)) => GatewayEvent::decode(json),
+            Some(Err(err)) => Err(err)?,
+            None => {
+                return Err(Error::WebSocket(
+                    websockets::WebSocketError::WebSocketClosedError,
+                ))
+            }
+        }?;
+
+        let ready = match ready {
             GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-                sequence = seq;
-                ready = event;
+                let _ = sequence_send.send(seq);
+                event
             }
             GatewayEvent::InvalidateSession => {
                 debug!("Session invalidated, reidentifying");
-                let _ = tx.send(Status::SendMessage(identify.clone()));
-                match receiver.recv_json(GatewayEvent::decode)? {
-                    GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-                        sequence = seq;
-                        ready = event;
+
+                shared_sender.send(identify.clone()).await?;
+
+                let event = match receiver.next().await {
+                    Some(Ok(json)) => GatewayEvent::decode(json),
+                    Some(Err(err)) => todo!(),
+                    None => todo!(),
+                }?;
+
+                match event {
+                    GatewayEvent::Dispatch(seq, Event::Ready(ready)) => {
+                        let _ = sequence_send.send(seq).await;
+                        ready
                     }
                     GatewayEvent::InvalidateSession => {
                         return Err(Error::Protocol(
@@ -196,7 +244,8 @@ impl Connection {
                     "Expected Ready or InvalidateSession during handshake",
                 ));
             }
-        }
+        };
+
         if ready.version != GATEWAY_VERSION {
             warn!(
                 "Got protocol version {} instead of {}",
@@ -207,25 +256,28 @@ impl Connection {
 
         // return the connection
         Ok((
-            finish_connection!(
-                keepalive_channel: tx,
+            Connection {
                 receiver: receiver,
-                ws_url: base_url.to_owned(),
-                token: token.to_owned(),
+                sender: shared_sender,
+
                 session_id: Some(session_id),
-                last_sequence: sequence,
-                identify: identify;
                 // voice only
                 user_id: ready.user.id,
                 voice_handles: HashMap::new(),
-            ),
+
+                reconnect: ReconnectData {
+                    url,
+                    token: token.to_owned(),
+                    identify,
+                },
+            },
             ready,
         ))
     }
 
     /// Change the game information that this client reports as playing.
-    pub fn set_game(&self, game: Option<Game>) {
-        self.set_presence(game, OnlineStatus::Online, false)
+    pub async fn set_game(&mut self, game: Option<Game>) -> Result<()> {
+        self.set_presence(game, OnlineStatus::Online, false).await
     }
 
     /// Set the client to be playing this game, with defaults used for any
@@ -238,7 +290,12 @@ impl Connection {
     /// information.
     ///
     /// `afk` will help Discord determine where to send notifications.
-    pub fn set_presence(&self, game: Option<Game>, status: OnlineStatus, afk: bool) {
+    pub async fn set_presence(
+        &mut self,
+        game: Option<Game>,
+        status: OnlineStatus,
+        afk: bool,
+    ) -> Result<()> {
         let status = match status {
             OnlineStatus::Offline => OnlineStatus::Invisible,
             other => other,
@@ -252,7 +309,8 @@ impl Connection {
             Some(game) => json! {{ "name": game.name, "type": GameType::Playing }},
             None => json!(null),
         };
-        let msg = json! {{
+
+        let presence_update = json! {{
             "op": 3,
             "d": {
                 "afk": afk,
@@ -261,7 +319,10 @@ impl Connection {
                 "game": game,
             }
         }};
-        let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+
+        self.sender.send(presence_update).await?;
+
+        Ok(())
     }
 
     /// Get a handle to the voice connection for a server.
@@ -549,53 +610,52 @@ impl Drop for Connection {
 }
 
 #[inline]
-fn build_gateway_url(base: &str) -> Result<::websocket::url::Url> {
-    websocket::url::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
-        .map_err(|_| Error::Other("Invalid gateway URL"))
+fn build_gateway_url(base: &str) -> String {
+    format!("{}?v={}", base, GATEWAY_VERSION)
 }
 
-async fn keepalive(
-    interval: u64,
-    mut sender: Sender<WebSocketStream>,
-    channel: mpsc::Receiver<Status>,
+/// Spawns a future that sends heartbeats at the given interval.
+///
+/// # Stopping
+///
+/// Stopping execution of the `heartbeat` task, either because the connection
+/// has been lost, or the application is shutting down can be done via
+/// `todo!()`
+async fn heartbeat(
+    interval: Duration,
+    mut sender: SharedSink<JsonSink, Value>,
+    mut sequence: mpsc::Receiver<u64>,
 ) {
-    let mut timer = crate::Timer::new(interval);
+    let mut interval = tokio::time::interval(interval);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
     let mut last_sequence = 0;
 
-    'outer: loop {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    loop {
+        interval.tick().await;
 
-        loop {
-            match channel.try_recv() {
-                Ok(Status::SendMessage(val)) => match sender.send_json(&val) {
-                    Ok(()) => {}
-                    Err(e) => warn!("Error sending gateway message: {:?}", e),
-                },
-                Ok(Status::Sequence(seq)) => {
-                    last_sequence = seq;
-                }
-                Ok(Status::ChangeInterval(interval)) => {
-                    timer = crate::Timer::new(interval);
-                }
-                Ok(Status::ChangeSender(new_sender)) => {
-                    sender = new_sender;
-                }
-                Ok(Status::Aborted) => break 'outer,
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break 'outer,
-            }
-        }
+        let map = json! {{
+            "op": 1,
+            "d": last_sequence
+        }};
 
-        if timer.check_tick() {
-            let map = json! {{
-                "op": 1,
-                "d": last_sequence
-            }};
-            match sender.send_json(&map) {
-                Ok(()) => {}
-                Err(e) => warn!("Error sending gateway keeaplive: {:?}", e),
-            }
+        match sender.send(map).await {
+            Err(e) => warn!("Error sending gateway keeaplive: {:?}", e),
+            _ => {}
         }
     }
-    let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
+}
+
+/// Instructions for how to reconnect.
+///
+/// Contains the Gateway URL and the login payload.
+#[derive(Debug)]
+struct ReconnectData {
+    /// The URL of the Discord Gateway.
+    pub url: String,
+    /// The token used to sign in to Discord.
+    pub token: String,
+
+    /// The complete identify payload used when logging in.
+    pub identify: Value,
 }

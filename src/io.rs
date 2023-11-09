@@ -18,6 +18,16 @@ pub struct JsonStream<T> {
     _t: PhantomData<T>,
 }
 
+impl<T> JsonStream<T> {
+    /// Creates a new [`JsonStream`] by wrapping a [`WebSocketReadHalf`]
+    pub fn new(read: WebSocketReadHalf) -> Self {
+        Self {
+            inner: read,
+            _t: PhantomData,
+        }
+    }
+}
+
 impl<T: DeserializeOwned> Stream for JsonStream<T> {
     type Item = Result<T, JsonStreamError>;
 
@@ -39,6 +49,13 @@ impl<T: DeserializeOwned> Stream for JsonStream<T> {
 #[derive(Debug)]
 pub struct JsonSink {
     inner: WebSocketWriteHalf,
+}
+
+impl JsonSink {
+    /// Creates a new [`JsonSink`] by wrapping a [`WebSocketWriteHalf`]
+    pub fn new(write: WebSocketWriteHalf) -> Self {
+        Self { inner: write }
+    }
 }
 
 impl<T: Serialize> Sink<T> for JsonSink {
@@ -163,6 +180,15 @@ where
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.channel.take();
         Poll::Ready(Ok(()))
+    }
+}
+
+impl<Si: Sink<T>, T> Clone for SharedSink<Si, T> {
+    fn clone(&self) -> Self {
+        Self {
+            channel: self.channel.clone(),
+            current: vec![],
+        }
     }
 }
 

@@ -16,9 +16,10 @@ use websocket::client::{Client, Sender};
 use websocket::stream::WebSocketStream;
 
 use crate::model::*;
-use crate::{Error, ReceiverExt, Result, SenderExt};
+use crate::{Error, Result};
 
 /// An active or inactive voice connection, obtained from `Connection::voice`.
+#[derive(Debug)]
 pub struct VoiceConnection {
     // primary WS send control
     server_id: Option<ServerId>, // None for group and private calls

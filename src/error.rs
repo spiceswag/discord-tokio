@@ -95,6 +95,26 @@ impl From<WebSocketError> for Error {
     }
 }
 
+impl From<crate::io::JsonStreamError> for Error {
+    fn from(value: crate::io::JsonStreamError) -> Self {
+        match value {
+            crate::io::JsonStreamError::Json(err) => Self::Json(err),
+            crate::io::JsonStreamError::Ws(err) => Self::WebSocket(err),
+        }
+    }
+}
+
+impl From<crate::io::SharedSinkError<crate::io::JsonSink, Value>> for Error {
+    fn from(value: crate::io::SharedSinkError<crate::io::JsonSink, Value>) -> Self {
+        match value {
+            crate::io::SharedSinkError::SinkClosed => {
+                Self::WebSocket(WebSocketError::WebSocketClosedError)
+            }
+            crate::io::SharedSinkError::SinkError(err) => Self::from(err),
+        }
+    }
+}
+
 #[cfg(feature = "voice")]
 impl From<OpusError> for Error {
     fn from(err: OpusError) -> Error {

@@ -1760,7 +1760,7 @@ impl Discord {
     ) -> Result<(Connection, ReadyEvent)> {
         self.connection_builder()
             .await?
-            .with_shard(shard_id, total_shards)
+            .sharding(shard_id, total_shards)
             .connect()
             .await
     }
@@ -1890,58 +1890,5 @@ fn resolve_invite(invite: &str) -> &str {
         &invite[11..]
     } else {
         invite
-    }
-}
-
-// Timer that remembers when it is supposed to go off
-struct Timer {
-    next_tick_at: time::Instant,
-    tick_len: time::Duration,
-}
-
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
-impl Timer {
-    fn new(tick_len_ms: u64) -> Timer {
-        let tick_len = time::Duration::from_millis(tick_len_ms);
-        Timer {
-            next_tick_at: time::Instant::now() + tick_len,
-            tick_len: tick_len,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn immediately(&mut self) {
-        self.next_tick_at = time::Instant::now();
-    }
-
-    fn defer(&mut self) {
-        self.next_tick_at = time::Instant::now() + self.tick_len;
-    }
-
-    fn check_tick(&mut self) -> bool {
-        if time::Instant::now() >= self.next_tick_at {
-            self.next_tick_at = self.next_tick_at + self.tick_len;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn sleep_until_tick(&mut self) {
-        let now = time::Instant::now();
-        if self.next_tick_at > now {
-            std::thread::sleep(self.next_tick_at - now);
-        }
-        self.next_tick_at = self.next_tick_at + self.tick_len;
-    }
-}
-
-mod internal {
-    pub enum Status {
-        SendMessage(::serde_json::Value),
-        Sequence(u64),
-        ChangeInterval(u64),
-        ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
-        Aborted,
     }
 }
