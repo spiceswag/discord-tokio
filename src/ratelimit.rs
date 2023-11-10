@@ -7,7 +7,7 @@ use tracing::{error, warn};
 
 use crate::{Error, Result};
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct RateLimits {
     // Mutexes here are expected to have basically 0 wait time
     global: Mutex<RateLimit>,
@@ -52,7 +52,7 @@ impl RateLimits {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct RateLimit {
     reset: i64,
     limit: i64,
