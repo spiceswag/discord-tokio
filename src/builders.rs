@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use chrono::offset::FixedOffset;
 use chrono::DateTime;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::model::*;

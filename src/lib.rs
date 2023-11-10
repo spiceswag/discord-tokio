@@ -24,12 +24,10 @@
 //! and receiving audio are also possible.
 //!
 //! For examples, see the `examples` directory in the source tree.
+
 #![warn(missing_docs)]
 #![allow(deprecated)]
 #![feature(async_fn_in_trait)]
-
-#[macro_use]
-extern crate serde_derive;
 
 use std::collections::BTreeMap;
 
