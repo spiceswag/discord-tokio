@@ -8,8 +8,11 @@ use std::{
 
 use futures::{ready, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use websockets::{Message, WebSocketError, WebSocketReadHalf, WebSocketWriteHalf};
+
+use crate::{model::GatewayEvent, Error};
 
 /// JSON-encoded values received from a WebSocket.
 #[derive(Debug)]
@@ -197,4 +200,37 @@ impl<Si: Sink<T>, T> Clone for SharedSink<Si, T> {
 pub enum SharedSinkError<Si: Sink<T>, T> {
     SinkClosed,
     SinkError(Si::Error),
+}
+
+/// A stream over gateway events.
+#[derive(Debug)]
+pub struct GatewayEventStream {
+    json: JsonStream<Value>,
+}
+
+impl GatewayEventStream {
+    /// Construct a new gateway event stream
+    /// by wrapping a stream over the raw JSON of said events
+    pub fn new(json: JsonStream<Value>) -> Self {
+        Self { json }
+    }
+}
+
+impl Stream for GatewayEventStream {
+    type Item = Result<GatewayEvent, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let message = match ready!(self.json.poll_next_unpin(cx)) {
+            Some(Ok(message)) => message,
+            Some(Err(JsonStreamError::Json(json_err))) => {
+                return Poll::Ready(Some(Err(Error::Json(json_err))))
+            }
+            Some(Err(JsonStreamError::Ws(ws_err))) => {
+                return Poll::Ready(Some(Err(Error::WebSocket(ws_err))))
+            }
+            None => return Poll::Ready(None),
+        };
+
+        Poll::Ready(Some(Ok(GatewayEvent::decode(message)?)))
+    }
 }

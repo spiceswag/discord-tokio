@@ -1,35 +1,23 @@
 #[cfg(feature = "voice")]
 use std::collections::HashMap;
+use std::mem;
+use std::pin::Pin;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
-use websockets::{WebSocket, WebSocketReadHalf};
+use websockets::WebSocket;
 
-use crate::io::SharedSink;
+use crate::io::{GatewayEventStream, SharedSink};
 use crate::io::{JsonSink, JsonStream, JsonStreamError};
-use crate::model::*;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceConnection;
+use crate::{model::*, Discord};
 use crate::{Error, Result};
 
 const GATEWAY_VERSION: u64 = 6;
-
-#[cfg(feature = "voice")]
-macro_rules! finish_connection {
-    ($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
-        $($name1: $val1,)*
-        $($name2: $val2,)*
-    }}
-}
-#[cfg(not(feature = "voice"))]
-macro_rules! finish_connection {
-    ($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
-        $($name1: $val1,)*
-    }}
-}
 
 #[derive(Clone)]
 pub struct ConnectionBuilder<'a> {
@@ -102,9 +90,20 @@ impl<'a> ConnectionBuilder<'a> {
 #[derive(Debug)]
 pub struct Connection {
     /// Receiver of raw JSON events from the Discord gateway.
-    receiver: JsonStream<Value>,
+    receiver: GatewayEventStream,
     /// Shared sender for sending presence updates and the similar.
     sender: SharedSink<JsonSink, Value>,
+
+    /// Channel for sending message sequence numbers.
+    sequence_send: mpsc::Sender<u64>,
+    /// The latest sequence number received.
+    last_sequence: u64,
+
+    /// Shutdown handle to the heartbeat task.
+    ///
+    /// This field is always `Some` unless if in the middle of
+    /// a shutdown or reconnect operation.
+    shutdown_heartbeat: Option<oneshot::Sender<()>>,
 
     #[cfg(feature = "voice")]
     voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
@@ -157,7 +156,7 @@ impl Connection {
         let ws = WebSocket::connect(&url).await?;
 
         let (receiver, sender) = ws.split();
-        let mut receiver = JsonStream::<Value>::new(receiver);
+        let mut receiver = GatewayEventStream::new(JsonStream::<Value>::new(receiver));
         let mut sender = JsonSink::new(sender);
 
         // send the handshake
@@ -168,14 +167,14 @@ impl Connection {
 
         // read the Hello and spawn the keepalive thread
         let hello = match receiver.next().await {
-            Some(Ok(json)) => GatewayEvent::decode(json),
-            Some(Err(err)) => Err(err)?,
+            Some(Ok(event)) => event,
+            Some(Err(err)) => return Err(err),
             None => {
                 return Err(Error::WebSocket(
                     websockets::WebSocketError::WebSocketClosedError,
                 ))
             }
-        }?;
+        };
 
         let heartbeat_interval = match hello {
             GatewayEvent::Hello(interval) => interval,
@@ -185,29 +184,34 @@ impl Connection {
             }
         };
 
-        let (sequence_send, sequence_recv) = mpsc::channel(16);
+        let last_sequence;
+
         let mut shared_sender = SharedSink::new(sender);
+        let (sequence_send, sequence_recv) = mpsc::channel(16);
+        let (shutdown_send, shutdown_recv) = oneshot::channel();
 
         tokio::spawn(heartbeat(
             Duration::from_millis(heartbeat_interval),
             shared_sender.clone(),
             sequence_recv,
+            shutdown_recv,
         ));
 
         // read the Ready event
         let ready = match receiver.next().await {
-            Some(Ok(json)) => GatewayEvent::decode(json),
-            Some(Err(err)) => Err(err)?,
+            Some(Ok(event)) => event,
+            Some(Err(err)) => return Err(err),
             None => {
                 return Err(Error::WebSocket(
                     websockets::WebSocketError::WebSocketClosedError,
                 ))
             }
-        }?;
+        };
 
         let ready = match ready {
             GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
                 let _ = sequence_send.send(seq);
+                last_sequence = seq;
                 event
             }
             GatewayEvent::InvalidateSession => {
@@ -216,14 +220,19 @@ impl Connection {
                 shared_sender.send(identify.clone()).await?;
 
                 let event = match receiver.next().await {
-                    Some(Ok(json)) => GatewayEvent::decode(json),
-                    Some(Err(err)) => todo!(),
-                    None => todo!(),
-                }?;
+                    Some(Ok(event)) => event,
+                    Some(Err(err)) => return Err(err),
+                    None => {
+                        return Err(Error::WebSocket(
+                            websockets::WebSocketError::WebSocketClosedError,
+                        ))
+                    }
+                };
 
                 match event {
                     GatewayEvent::Dispatch(seq, Event::Ready(ready)) => {
                         let _ = sequence_send.send(seq).await;
+                        last_sequence = seq;
                         ready
                     }
                     GatewayEvent::InvalidateSession => {
@@ -260,6 +269,11 @@ impl Connection {
                 receiver: receiver,
                 sender: shared_sender,
 
+                sequence_send,
+                last_sequence,
+
+                shutdown_heartbeat: Some(shutdown_send),
+
                 session_id: Some(session_id),
                 // voice only
                 user_id: ready.user.id,
@@ -282,8 +296,9 @@ impl Connection {
 
     /// Set the client to be playing this game, with defaults used for any
     /// extended information.
-    pub fn set_game_name(&self, name: String) {
-        self.set_presence(Some(Game::playing(name)), OnlineStatus::Online, false);
+    pub async fn set_game_name(&mut self, name: String) -> Result<()> {
+        self.set_presence(Some(Game::playing(name)), OnlineStatus::Online, false)
+            .await
     }
 
     /// Sets the active presence of the client, including game and/or status
@@ -429,62 +444,94 @@ impl Connection {
         }
     }
 
-    /// Reconnect after receiving an OP7 RECONNECT
+    /// Reconnect after receiving an OP7 RECONNECT,
+    /// and replace the current connection.
+    ///
+    /// This method *does not try to resume*, instead re-identifying
+    /// and wasting network bandwidth by refetching all visible discord state.
     async fn reconnect(&mut self) -> Result<ReadyEvent> {
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        self.keepalive_channel
-            .send(Status::Aborted)
-            .expect("Could not stop the keepalive thread, there will be a thread leak.");
+
+        self.shutdown_heartbeat
+            .take()
+            .unwrap_or_else(|| unreachable!())
+            .send(())
+            .expect("Could not stop the keepalive task, there will be a task leak.");
+
         trace!("Reconnecting...");
+
         // Make two attempts on the current known gateway URL
         for _ in 0..2 {
-            if let Ok((conn, ready)) =
-                Connection::establish_connection(&self.ws_url, &self.token, self.identify.clone())
-            {
-                ::std::mem::replace(self, conn).raw_shutdown();
+            let reconnect = Connection::establish_connection(
+                &self.reconnect.url,
+                &self.reconnect.token,
+                self.reconnect.identify.clone(),
+            )
+            .await;
+
+            if let Ok((conn, ready)) = reconnect {
+                mem::replace(self, conn).raw_shutdown();
+
                 self.session_id = Some(ready.session_id.clone());
+
                 return Ok(ready);
             }
+
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
 
         // If those fail, hit REST for a new endpoint
-        let url = crate::Discord::from_token_raw(self.token.to_owned())
+        let url = Discord::from_token_raw(self.reconnect.token.to_owned())
             .get_gateway_url()
             .await?;
-        let (conn, ready) =
-            Connection::establish_connection(&url, &self.token, self.identify.clone())?;
-        ::std::mem::replace(self, conn).raw_shutdown();
+
+        let (conn, ready) = Connection::establish_connection(
+            &url,
+            &self.reconnect.token,
+            self.reconnect.identify.clone(),
+        )
+        .await?;
+
+        mem::replace(self, conn).raw_shutdown();
+
         self.session_id = Some(ready.session_id.clone());
+
         Ok(ready)
     }
 
-    /// Resume using our existing session
+    /// Resume using our existing session *and connection*.
+    /// Consider reconnecting through the `todo!()` method before resuming.
+    ///
+    /// https://discord.com/developers/docs/topics/gateway#resuming
     async fn resume(&mut self, session_id: String) -> Result<Event> {
-        tokio::time::sleep(Duration::from_millis(1000)).await;
         trace!("Resuming...");
+
         // close connection and re-establish
-        self.receiver
-            .get_mut()
-            .get_mut()
-            .shutdown(::std::net::Shutdown::Both)?;
-        let url = build_gateway_url(&self.ws_url)?;
-        let response = Client::connect(url)?.send()?;
-        response.validate()?;
-        let (mut sender, mut receiver) = response.begin().split();
+        let _ = self
+            .shutdown_heartbeat
+            .take()
+            .unwrap_or_else(|| unreachable!())
+            .send(());
+
+        let url = build_gateway_url(&self.reconnect.url);
+
+        let ws = WebSocket::connect(&url).await?;
+        let (mut receiver, sender) = ws.split();
+
+        let mut sender = JsonSink::new(sender);
 
         // send the resume request
         let resume = json! {{
             "op": 6,
             "d": {
                 "seq": self.last_sequence,
-                "token": self.token,
+                "token": self.reconnect.token,
                 "session_id": session_id,
             }
         }};
-        sender.send_json(&resume)?;
 
-        // TODO: when Discord has implemented it, observe the RESUMING event here
+        sender.send(resume).await?;
+
         let first_event;
         loop {
             match receiver.recv_json(GatewayEvent::decode)? {
@@ -523,23 +570,12 @@ impl Connection {
 
     /// Cleanly shut down the websocket connection. Optional.
     pub fn shutdown(mut self) -> Result<()> {
-        self.inner_shutdown()?;
-        ::std::mem::forget(self); // don't call a second time
-        Ok(())
+        todo!()
     }
 
     // called from shutdown() and drop()
     fn inner_shutdown(&mut self) -> Result<()> {
-        // Hacky horror: get the WebSocketStream from the Receiver and formally close it
-        let stream = self.receiver.get_mut().get_mut();
-        Sender::new(stream.by_ref(), true)
-            .send_message(&::websocket::message::Message::close_because(1000, ""))?;
-        stream.flush()?;
-        stream.shutdown(::std::net::Shutdown::Both)?;
-        self.keepalive_channel
-            .send(Status::Aborted)
-            .expect("Could not stop the keepalive thread, there will be a thread leak.");
-        Ok(())
+        todo!()
     }
 
     // called when we want to drop the connection with no fanfare
@@ -560,25 +596,33 @@ impl Connection {
     /// and memory.
     ///
     /// Can be used with `State::all_servers`.
-    pub fn sync_servers(&self, servers: &[ServerId]) {
+    pub async fn sync_servers(&mut self, servers: &[ServerId]) -> Result<()> {
         let msg = json! {{
             "op": 12,
             "d": servers,
         }};
-        let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+
+        self.sender.send(msg).await?;
+
+        Ok(())
     }
 
     /// Request a synchronize of active calls for the specified channels.
     ///
     /// Can be used with `State::all_private_channels`.
-    pub fn sync_calls(&self, channels: &[ChannelId]) {
+    pub async fn sync_calls(&mut self, channels: &[ChannelId]) -> Result<()> {
         for &channel in channels {
             let msg = json! {{
                 "op": 13,
                 "d": { "channel_id": channel }
             }};
-            let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+
+            self.sender.feed(msg).await?;
         }
+
+        self.sender.flush().await?;
+
+        Ok(())
     }
 
     /// Requests a download of all member information for large servers.
@@ -623,23 +667,34 @@ fn build_gateway_url(base: &str) -> String {
 /// `todo!()`
 async fn heartbeat(
     interval: Duration,
-    mut sender: SharedSink<JsonSink, Value>,
+    mut sink: SharedSink<JsonSink, Value>,
     mut sequence: mpsc::Receiver<u64>,
+    mut shutdown: oneshot::Receiver<()>,
 ) {
     let mut interval = tokio::time::interval(interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+    let mut shutdown = Pin::new(&mut shutdown);
+
     let mut last_sequence = 0;
 
     loop {
-        interval.tick().await;
+        tokio::select! {
+            _ = interval.tick() => {},
+            _ = &mut shutdown => break
+        };
+
+        // receive the latest sequence number
+        while let Ok(num) = sequence.try_recv() {
+            last_sequence = num;
+        }
 
         let map = json! {{
             "op": 1,
             "d": last_sequence
         }};
 
-        match sender.send(map).await {
+        match sink.send(map).await {
             Err(e) => warn!("Error sending gateway keeaplive: {:?}", e),
             _ => {}
         }

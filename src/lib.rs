@@ -74,11 +74,12 @@ pub use error::{Error, Result};
 use model::*;
 use ratelimit::RateLimits;
 use reqwest::{header, Method};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware as RetryMiddleware};
 pub use state::{ChannelRef, State};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 const USER_AGENT: &'static str = concat!(
-    "DiscordBot (https://github.com/SpaceManiac/discord-tokio, ",
+    "DiscordBot (https://github.com/spiceswag/discord-tokio, ",
     env!("CARGO_PKG_VERSION"),
     ")"
 );
@@ -110,11 +111,18 @@ pub struct Discord {
 }
 
 fn tls_client() -> reqwest::Client {
-    reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .https_only(true)
         .user_agent(USER_AGENT)
         .build()
-        .expect("Couldn't build HTTPS reqwest client")
+        .expect("Couldn't build HTTPS reqwest client");
+
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(99);
+    let with_middleware = reqwest_middleware::ClientBuilder::new(client)
+        .with(RetryMiddleware::new_with_policy(retry_policy))
+        .build();
+
+    with_middleware
 }
 
 impl Discord {
