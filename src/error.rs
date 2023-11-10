@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::error::Error as StdError;
 use std::fmt::Display;
 use std::io::Error as IoError;
+use tracing::debug;
 use websockets::WebSocketError;
 
 /// Discord API `Result` alias type.

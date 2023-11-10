@@ -7,11 +7,12 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
+use bitflags::bitflags;
+use chrono::prelude::*;
 use serde_json::Value;
+use tracing::{error, trace, warn};
 
 use super::{Error, Object, Result};
-
-use chrono::prelude::*;
 
 macro_rules! req {
     ($opt:expr) => {
@@ -2701,6 +2702,7 @@ pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<
 
 fn warn_field(name: &str, map: Object) {
     if !map.is_empty() {
-        trace!("Unhandled keys: {} has {:?}", name, Value::Object(map))
+        let obj = Value::Object(map);
+        trace!("Unhandled keys: {} has {:?}", name, obj)
     }
 }

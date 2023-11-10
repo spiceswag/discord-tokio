@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::{self, time::Duration};
 
 use chrono::prelude::*;
+use tracing::{error, warn};
 
 use crate::{Error, Result};
 

@@ -30,20 +30,8 @@
 
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
-#[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate log;
-#[cfg(feature = "voice")]
-extern crate byteorder;
-#[cfg(feature = "voice")]
-extern crate opus;
-#[cfg(feature = "voice")]
-extern crate sodiumoxide;
 
-use std::{collections::BTreeMap, time};
+use std::collections::BTreeMap;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -52,8 +40,9 @@ mod error;
 mod io;
 mod ratelimit;
 mod state;
-#[cfg(feature = "voice")]
-pub mod voice;
+
+// #[cfg(feature = "voice")]
+// pub mod voice;
 
 macro_rules! cdn_concat {
     ($e:expr) => {
@@ -67,15 +56,17 @@ mod serial;
 pub mod builders;
 pub mod model;
 
-use builders::*;
-pub use connection::Connection;
-use error::{CheckStatus, StatusChecks};
 pub use error::{Error, Result};
-use model::*;
+pub use state::{ChannelRef, State};
+use tracing::debug;
+
+use crate::builders::*;
+use crate::error::{CheckStatus, StatusChecks};
+use crate::model::*;
+
 use ratelimit::RateLimits;
 use reqwest::{header, Method};
-use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware as RetryMiddleware};
-pub use state::{ChannelRef, State};
+use serde_json::json;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 const USER_AGENT: &'static str = concat!(
@@ -111,18 +102,11 @@ pub struct Discord {
 }
 
 fn tls_client() -> reqwest::Client {
-    let client = reqwest::Client::builder()
+    reqwest::Client::builder()
         .https_only(true)
         .user_agent(USER_AGENT)
         .build()
-        .expect("Couldn't build HTTPS reqwest client");
-
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(99);
-    let with_middleware = reqwest_middleware::ClientBuilder::new(client)
-        .with(RetryMiddleware::new_with_policy(retry_policy))
-        .build();
-
-    with_middleware
+        .expect("Couldn't build HTTPS reqwest client")
 }
 
 impl Discord {
