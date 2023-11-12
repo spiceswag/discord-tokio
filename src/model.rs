@@ -232,68 +232,83 @@ fn serde<T: for<'d> ::serde::Deserialize<'d>>(value: Value) -> Result<T> {
     ::serde_json::from_value(value).map_err(From::from)
 }
 
-/// The type of a channel
+/// The type of a channel.
+///
+/// https://discord.com/developers/docs/resources/channel#channel-object-channel-types
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[repr(u8)]
 pub enum ChannelType {
-    /// A group channel, separate from a server
-    Group,
     /// A private channel with only one other person
-    Private,
+    DirectMessage = 1,
+    /// A group channel, separate from a server
+    Group = 3,
+
     /// A text channel in a server
-    Text,
+    Text = 0,
     /// A voice channel
-    Voice,
+    Voice = 2,
+
     /// A channel category in a server
-    Category,
-    ///
-    News,
-    ///
-    Store,
+    Category = 4,
+
+    /// A channel that users can follow and cross-post into their own server (formerly news channels)
+    Announcement = 5,
+
     /// A temporary sub-channel within a news channel
-    NewsThread,
+    AnnouncementThread = 10,
     /// A temporary sub-channel within a group channel
-    PublicThread,
+    PublicThread = 11,
     /// A temporary sub-channel within a group channel, limited to those who are invited or have MANAGE_THREADS
-    PrivateThread,
+    PrivateThread = 12,
+
     /// A voice channel for hosting events
-    StageVoice,
+    StageVoice = 13,
+
     /// A channel which contains a list of servers
-    Directory,
+    Directory = 14,
+
     ///	A channel which exclusively contains threads
-    Forum,
+    Forum = 15,
+    /// Channel that can only contain threads, similar to [`Forum`] channels
+    ///
+    /// It's currently a Work In Progress as stated by discord,
+    /// and usage of it in ways
+    ///
+    /// [`Forum`]: crate::model::ChannelType::Forum
+    MediaForum = 16,
 }
 
 serial_use_mapping!(ChannelType, numeric);
 serial_names! { ChannelType;
     Group, "group";
-    Private, "private";
+    DirectMessage, "private";
     Text, "text";
     Voice, "voice";
     Category, "category";
-    News, "news";
-    Store, "store";
-    NewsThread, "news_thread";
+    Announcement, "news";
+    AnnouncementThread, "news_thread";
     PublicThread, "public_thread";
     PrivateThread, "private_thread";
     StageVoice, "stage_voice";
     Directory, "directory";
     Forum, "forum";
+    MediaForum, "media";
 }
 string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
     Text, 0;
-    Private, 1;
+    DirectMessage, 1;
     Voice, 2;
     Group, 3;
     Category, 4;
-    News, 5;
-    Store, 6;
-    NewsThread, 10;
+    Announcement, 5;
+    AnnouncementThread, 10;
     PublicThread, 11;
     PrivateThread, 12;
     StageVoice, 13;
     Directory, 14;
     Forum, 15;
+    MediaForum, 16;
 }
 
 /// A channel category.
