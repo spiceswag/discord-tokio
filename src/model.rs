@@ -1,6 +1,5 @@
 //! Struct and enum definitions of values in the Discord model.
 #![allow(missing_docs)]
-#![allow(deprecated)]
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -11,6 +10,7 @@ use bitflags::bitflags;
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use tracing::{error, trace, warn};
 
 use super::{Error, Object, Result};
@@ -235,39 +235,51 @@ fn serde<T: for<'d> ::serde::Deserialize<'d>>(value: Value) -> Result<T> {
 /// The type of a channel.
 ///
 /// https://discord.com/developers/docs/resources/channel#channel-object-channel-types
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum ChannelType {
     /// A private channel with only one other person
+    #[serde(rename = "DM")]
     DirectMessage = 1,
     /// A group channel, separate from a server
+    #[serde(rename = "GROUP_DM")]
     Group = 3,
 
     /// A text channel in a server
+    #[serde(rename = "GUILD_TEXT")]
     Text = 0,
     /// A voice channel
+    #[serde(rename = "GUILD_VOICE")]
     Voice = 2,
 
     /// A channel category in a server
+    #[serde(rename = "GUILD_CATEGORY")]
     Category = 4,
 
     /// A channel that users can follow and cross-post into their own server (formerly news channels)
+    #[serde(rename = "GUILD_ANNOUNCEMENT")]
     Announcement = 5,
 
-    /// A temporary sub-channel within a news channel
+    /// A temporary sub-channel within an announcement channel
+    #[serde(rename = "ANNOUNCEMENT_THREAD")]
     AnnouncementThread = 10,
     /// A temporary sub-channel within a group channel
+    #[serde(rename = "PUBLIC_THREAD")]
     PublicThread = 11,
     /// A temporary sub-channel within a group channel, limited to those who are invited or have MANAGE_THREADS
+    #[serde(rename = "PRIVATE_THREAD")]
     PrivateThread = 12,
 
     /// A voice channel for hosting events
-    StageVoice = 13,
+    #[serde(rename = "PRIVATE_THREAD")]
+    Stage = 13,
 
     /// A channel which contains a list of servers
+    #[serde(rename = "GUILD_DIRECTORY")]
     Directory = 14,
 
     ///	A channel which exclusively contains threads
+    #[serde(rename = "GUILD_FORUM")]
     Forum = 15,
     /// Channel that can only contain threads, similar to [`Forum`] channels
     ///
@@ -275,41 +287,10 @@ pub enum ChannelType {
     /// and usage of it in ways
     ///
     /// [`Forum`]: crate::model::ChannelType::Forum
+    #[serde(rename = "GUILD_MEDIA")]
     MediaForum = 16,
 }
-
-serial_use_mapping!(ChannelType, numeric);
-serial_names! { ChannelType;
-    Group, "group";
-    DirectMessage, "private";
-    Text, "text";
-    Voice, "voice";
-    Category, "category";
-    Announcement, "news";
-    AnnouncementThread, "news_thread";
-    PublicThread, "public_thread";
-    PrivateThread, "private_thread";
-    StageVoice, "stage_voice";
-    Directory, "directory";
-    Forum, "forum";
-    MediaForum, "media";
-}
-string_decode_using_serial_name!(ChannelType);
-serial_numbers! { ChannelType;
-    Text, 0;
-    DirectMessage, 1;
-    Voice, 2;
-    Group, 3;
-    Category, 4;
-    Announcement, 5;
-    AnnouncementThread, 10;
-    PublicThread, 11;
-    PrivateThread, 12;
-    StageVoice, 13;
-    Directory, 14;
-    Forum, 15;
-    MediaForum, 16;
-}
+// todo tests for this
 
 /// A channel category.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,18 +458,16 @@ impl Member {
 /// A private or public channel
 #[derive(Debug, Clone)]
 pub enum Channel {
-    /// A group channel separate from a server
-    Group(Group),
     /// Text channel to another user
     Private(PrivateChannel),
+    /// A group channel separate from a server
+    Group(Group),
     /// Voice or text channel within a server
     Public(PublicChannel),
     /// an organizational category that contains channels
     Category(ChannelCategory),
     /// a channel that users can follow and crosspost into their own server
-    News,
-    /// a channel in which game developers can sell their game on Discord
-    Store,
+    Announcements,
 }
 
 impl Channel {
@@ -500,8 +479,7 @@ impl Channel {
             1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
             3 => Group::decode(Value::Object(map)).map(Channel::Group),
             4 => ChannelCategory::decode(Value::Object(map)).map(Channel::Category),
-            5 => Ok(Channel::News),
-            6 => Ok(Channel::Store),
+            5 => Ok(Channel::Announcements),
             other => Err(Error::Decode(
                 "Expected value Channel type",
                 Value::from(other),

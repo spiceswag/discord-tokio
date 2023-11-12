@@ -436,8 +436,7 @@ impl State {
                             });
                     }
                 }
-                Channel::News => {}
-                Channel::Store => {}
+                Channel::Announcements => {}
             },
             Event::ChannelUpdate(ref channel) => match *channel {
                 Channel::Group(ref group) => {
@@ -496,8 +495,7 @@ impl State {
                             });
                     }
                 }
-                Channel::News => {}
-                Channel::Store => {}
+                Channel::Announcements => {}
             },
             Event::ChannelDelete(ref channel) => match *channel {
                 Channel::Group(ref group) => {
@@ -524,8 +522,7 @@ impl State {
                             });
                     }
                 }
-                Channel::News => {}
-                Channel::Store => {}
+                Channel::Announcements => {}
             },
             Event::ChannelPinsUpdate {
                 ref channel_id,
