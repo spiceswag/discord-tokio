@@ -15,19 +15,22 @@ pub struct RateLimits {
 }
 
 impl RateLimits {
-    /// Check before issuing a request for the given URL.
-    pub fn pre_check(&self, url: &str) {
+    /// Check rate-limits before issuing a request for the given URL,
+    /// sleeping until any rate-limits have been clear.
+    pub async fn pre_check(&self, url: &str) {
         self.global
             .lock()
             .expect("Rate limits poisoned")
-            .pre_check();
+            .pre_check()
+            .await;
+
         if let Some(rl) = self
             .endpoints
             .lock()
             .expect("Rate limits poisoned")
             .get_mut(url)
         {
-            rl.pre_check();
+            rl.pre_check().await;
         }
     }
 
@@ -60,6 +63,8 @@ struct RateLimit {
 }
 
 impl RateLimit {
+    /// Check the rate-limit counters before performing a request,
+    /// sleeping until any rate-limits have been cleared.
     async fn pre_check(&mut self) {
         // break out if uninitialized
         if self.limit == 0 {
@@ -80,7 +85,9 @@ impl RateLimit {
         if self.remaining <= 0 {
             // 900ms in case "difference" is off by 1
             let delay = difference as u64 * 1000 + 900;
+
             warn!("pre-ratelimit: sleeping for {}ms", delay);
+
             tokio::time::sleep(Duration::from_millis(delay)).await;
             return;
         }
