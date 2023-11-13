@@ -313,10 +313,13 @@ pub struct ServerPreview {
     /// The banner image (splash) hash of the server.
     ///
     /// https://discord.com/developers/docs/reference#image-formatting
-    pub splash: Option<String>,
+    #[serde(rename = "splash")]
+    pub banner: Option<String>,
 
     /// The hash of the banner image (splash) displayed
     /// in the public server discovery provided by Discord.
+    ///
+    /// Only present for guilds with the "DISCOVERABLE" feature
     ///
     /// https://discord.com/developers/docs/reference#image-formatting
     pub discovery_splash: Option<String>,
@@ -325,7 +328,7 @@ pub struct ServerPreview {
     pub emojis: Vec<Emoji>,
 
     /// A list of enabled server features.
-    pub features: Vec</* ServerFeature */ ()>,
+    pub features: Vec<ServerFeature>,
 
     /// Approximate number of members in this server.
     pub approximate_member_count: u64,
@@ -350,8 +353,8 @@ impl ServerPreview {
     /// Returns the formatted URL of the server's banner.
     ///
     /// Returns None if the server does not have an banner.
-    pub fn splash_url(&self) -> Option<String> {
-        self.splash
+    pub fn banner_url(&self) -> Option<String> {
+        self.banner
             .as_ref()
             .map(|icon| format!(cdn_concat!("/splashes/{}/{}.jpg"), self.id, icon))
     }
@@ -366,36 +369,287 @@ impl ServerPreview {
     }
 }
 
-/// Static information about a server
+/// An enabled feature for a guild.
+/// Most commonly allocated for feature roll-outs.
+///
+/// https://discord.com/developers/docs/resources/guild#guild-object-guild-features
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ServerFeature {
+    // server cosmetics (nitro boost or not)
+    /// Server has access to set a server banner image
+    Banner,
+    /// Server has access to set an animated server banner image
+    AnimatedBanner,
+    /// Server has access to set an animated server icon
+    AnimatedIcon,
+    /// Server has access to set an invite splash background
+    InviteSplash,
+
+    // discord gives servers badges
+    /// Server is verified by discord
+    Verified,
+    /// Server can allocate a custom permanent `https://discord.gg` invite code
+    VanityUrl,
+    /// Server is partnered with discord
+    Partnered,
+
+    /// Server has been set as a support server for an app on the App Directory
+    DeveloperSupportServer,
+
+    // discord recommends servers to you
+    /// Server can enable welcome screen, Membership Screening,
+    /// stage channels and discovery, and receives community updates.
+    Community,
+    /// Server is able to be discovered in the directory
+    Discoverable,
+    /// Server is able to be featured in the directory
+    Featurable,
+
+    // discord patreon wannabe
+    /// Server has enabled monetization
+    #[serde(rename = "CREATOR_MONETIZABLE_PROVISIONAL")]
+    CreatorMonetization,
+    /// Server has enabled the role subscription promo page
+    CreatorStorePage,
+
+    // discord creator economy
+    /// Server has role subscriptions that can be purchased
+    #[serde(rename = "ROLE_SUBSCRIPTIONS_AVAILABLE_FOR_PURCHASE")]
+    RoleSubscriptionsPurchasable,
+    /// Server has enabled role subscriptions
+    RoleSubscriptionsEnabled,
+    /// Server has enabled ticketed events
+    TicketedEventsAvailable,
+
+    // nitro boost features
+    /// Server has increased custom sticker slots
+    MoreStickers,
+    /// Server is able to set role icons
+    RoleIcons,
+    /// Server has access to set 384Kbps bitrate in voice (previously VIP voice servers)
+    VipRegions,
+
+    // server join utilities
+    /// Server has paused invites, preventing new users from joining
+    InvitesDisabled,
+    /// Server can be previewed before joining via Membership Screening or the directory
+    PreviewEnabled,
+    /// Server has enabled the welcome screen
+    WelcomeScreenEnabled,
+    /// Server has enabled Membership Screening
+    #[serde(rename = "MEMBER_VERIFICATION_GATE_ENABLED")]
+    MembershipScreening,
+
+    // random roll-outs
+    /// Server has access to create announcement channels
+    News,
+    /// Server has set up auto moderation rules
+    AutoModeration,
+    /// Server is using the **old** permissions configuration behavior
+    ApplicationCommandPermissionsV2,
+
+    // random settings
+    /// Server has disabled alerts for join raids in the configured safety alerts channel
+    RaidAlertsDisabled,
+}
+
+/// Extended static information about a server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Server {
+    /// The ID of the server.
     pub id: ServerId,
+    /// The name of the server (2-100 characters).
     pub name: String,
-    pub afk_timeout: u64,
-    pub afk_channel_id: Option<ChannelId>,
+    /// The icon hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
     pub icon: Option<String>,
-    pub roles: Vec<Role>,
-    pub region: String,
-    pub embed_enabled: bool,
-    pub embed_channel_id: Option<ChannelId>,
-    pub owner_id: UserId,
-    pub verification_level: VerificationLevel,
-    pub emojis: Vec<Emoji>,
-    pub features: Vec<String>,
+
+    /// The banner image (splash) hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
     pub splash: Option<String>,
-    pub default_message_notifications: u64,
-    pub mfa_level: u64,
+
+    /// The hash of the banner image (splash) displayed
+    /// in the public server discovery provided by Discord.
+    ///
+    /// Only present for guilds with the "DISCOVERABLE" feature
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
+    pub discovery_splash: Option<String>,
+
+    /// True if the requesting user is the owner of the guild.
+    pub owner: bool,
+    /// The owner of the guild
+    pub owner_id: UserId,
+
+    /// Total permissions for the user in the guild
+    /// (excludes channel and category overwrites and implicit permissions)
+    pub permissions: Permissions,
+
+    /// Voice region id for the guild (deprecated)
+    #[deprecated(note = "this field is replaced by a dedicated field on each voice channel")]
+    pub region: String,
+
+    /// Voice AFK timeout in seconds,
+    /// after which the user will be moved to the AFK channel.
+    pub afk_timeout: u64,
+    /// The ID of the AFK voice channel.
+    pub afk_channel_id: Option<ChannelId>,
+
+    /// True if the server widget is enabled
+    pub widget_enabled: bool,
+    /// The channel ID that the widget will generate an invite to, or `None` if set to no invite.
+    pub widget_channel_id: Option<ChannelId>,
+
+    /// User verification level to be able to use the server
+    pub verification_level: VerificationLevel,
+
+    /// Default message notification level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-default-message-notification-level
+    pub default_message_notifications: u8,
+    /// Explicit content filter level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-explicit-content-filter-level
+    pub explicit_content_filter: u8,
+
+    /// A list of all roles in the server.
+    pub roles: Vec<Role>,
+
+    /// A list of custom emojis in the server.
+    pub emojis: Vec<Emoji>,
+
+    /// Array of server features enabled for this server.
+    pub features: Vec<ServerFeature>,
+
+    /// Required multi factor authentication level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-mfa-level
+    pub mfa_level: u8,
+
+    // pub application_id: ApplicationId
+    /// The id of the channel where server notices
+    /// such as welcome messages and boost events are posted.
+    pub system_channel_id: Option<ChannelId>,
+    /// System channel flags.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-system-channel-flags
+    pub system_channel_flags: u64,
+
+    /// The ID of the channel where Community servers can display rules and/or guidelines.
+    pub rules_channel_id: Option<ChannelId>,
+
+    /// The maximum number of presences for the server
+    /// (null is always returned, apart from the largest of servers)
+    pub max_presences: Option<u64>,
+    /// The maximum number of members for the server
+    pub max_members: Option<u64>,
+
+    /// The vanity url code for the server
+    pub vanity_url_code: Option<String>,
+
+    /// The description of a server
+    pub description: Option<String>,
+    /// The banner image (splash) hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
+    pub banner: Option<String>,
+
+    /// Server boost level.
+    #[serde(rename = "premium_tier")]
+    pub boost_tier: u8,
+    /// The number of boosts this server currently has
+    #[serde(rename = "premium_subscription_count")]
+    pub boost_subscription_count: Option<u64>,
+
+    /// The preferred locale of a Community server;
+    /// used in server discovery and notices from Discord,
+    /// and sent in interactions; defaults to "en-US".
+    pub preferred_locale: String,
+
+    /// The id of the channel where admins and moderators
+    /// of Community guilds receive notices from Discord.
+    pub public_updates_channel_id: Option<ChannelId>,
+
+    /// The maximum amount of users in a voice turned video channel.
+    pub max_video_channel_users: u64,
+    /// The maximum amount of users in a stage video channel.
+    pub max_stage_video_channel_users: u64,
+
+    /// Approximate number of members in this guild,
+    /// returned from the `GET` `/guilds/<id>` and `/users/@me/guilds`
+    /// endpoints when `with_counts` is `true`.
+    pub approximate_member_count: u64,
+
+    /// Approximate number of non-offline members in this guild,
+    /// returned from the `GET` `/guilds/<id>` and `/users/@me/guilds`
+    /// endpoints when `with_counts` is `true`.
+    pub approximate_presence_count: u64,
+
+    /// The welcome screen of a Community guild, shown to new members,
+    /// returned in an Invite's server object.
+    pub welcome_screen: WelcomeScreen,
+
+    /// Server NSFW level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-guild-nsfw-level
+    pub nsfw_level: u8,
+
+    /// Custom server stickers
+    pub stickers: Option<Vec<() /* Sticker */>>,
+
+    /// Whether the guild has the boost progress bar enabled.
+    #[serde(rename = "premium_progress_bar_enabled")]
+    pub boost_progress_bar_enabled: bool,
+
+    /// The ID of the channel where admins and moderators
+    /// of Community guilds receive safety alerts from Discord.
+    pub safety_alerts_channel_id: Option<ChannelId>,
 }
 
 impl Server {
     /// Returns the formatted URL of the server's icon.
     ///
-    /// Returns None if the server does not have an icon.
+    /// Returns `None` if the server does not have an icon.
     pub fn icon_url(&self) -> Option<String> {
         self.icon
             .as_ref()
             .map(|icon| format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
     }
+
+    /// Returns the formatted URL of the server's banner.
+    ///
+    /// Returns `None` if the server does not have an banner.
+    pub fn banner_url(&self) -> Option<String> {
+        self.banner
+            .as_ref()
+            .map(|banner| format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, banner))
+    }
+}
+
+/// The welcome screen shown to new users.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WelcomeScreen {
+    /// The server description shown in the welcome screen.
+    pub description: Option<String>,
+    /// The channels shown in the welcome screen, up to 5.
+    pub welcome_channels: Vec<WelcomeChannels>,
+}
+
+/// One of the channels shown on the welcome screen.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WelcomeChannels {
+    /// The channel's ID.
+    pub channel_id: ChannelId,
+    /// The description shown for the channel.
+    pub description: String,
+    /// The emoji id, if the emoji is custom.
+    pub emoji_id: EmojiId,
+    /// The emoji name if custom, the unicode character if standard,
+    /// or null if no emoji is set.
+    pub emoji_name: Option<String>,
 }
 
 /// Representation of the number of member that would be pruned by a server
