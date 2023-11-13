@@ -36,18 +36,6 @@ macro_rules! warn_json {
     };
 }
 
-macro_rules! serial_decode {
-    ($typ:ident) => {
-        impl $typ {
-            #[inline]
-            #[doc(hidden)] // pre-deprecated
-            pub fn decode(value: Value) -> Result<Self> {
-                serde(value)
-            }
-        }
-    };
-}
-
 macro_rules! string_decode_using_serial_name {
     ($typ:ident) => {
         impl FromStr for $typ {
@@ -232,6 +220,8 @@ fn serde<T: for<'d> ::serde::Deserialize<'d>>(value: Value) -> Result<T> {
     ::serde_json::from_value(value).map_err(From::from)
 }
 
+// todo tests for this
+
 /// The type of a channel.
 ///
 /// https://discord.com/developers/docs/resources/channel#channel-object-channel-types
@@ -290,9 +280,8 @@ pub enum ChannelType {
     #[serde(rename = "GUILD_MEDIA")]
     MediaForum = 16,
 }
-// todo tests for this
 
-/// A channel category.
+/// A category (channel) that contains up to 50 other channels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelCategory {
     pub name: String,
@@ -304,20 +293,51 @@ pub struct ChannelCategory {
     pub server_id: Option<ServerId>,
     pub id: ChannelId,
 }
-serial_decode!(ChannelCategory);
 
-/// The basic information about a server only
+/// Basic information about a Discord server,
+/// viewable without needing to be a member,
+/// as part of an invite or in the official public server discovery.
+///
+/// https://discord.com/developers/docs/resources/guild#guild-preview-object
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerInfo {
+pub struct ServerPreview {
+    /// The ID of the server.
     pub id: ServerId,
+    /// The name of the server (2-100 characters).
     pub name: String,
+    /// The icon hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
     pub icon: Option<String>,
-    pub owner: bool,
-    pub permissions: Permissions,
-}
-serial_decode!(ServerInfo);
 
-impl ServerInfo {
+    /// The banner image (splash) hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
+    pub splash: Option<String>,
+
+    /// The hash of the banner image (splash) displayed
+    /// in the public server discovery provided by Discord.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
+    pub discovery_splash: Option<String>,
+
+    /// Custom server emojis.
+    pub emojis: Vec<Emoji>,
+
+    /// A list of enabled server features.
+    pub features: Vec</* ServerFeature */ ()>,
+
+    /// Approximate number of members in this server.
+    pub approximate_member_count: u64,
+
+    /// Approximate number of online members in this server.
+    pub approximate_presence_count: u64,
+
+    /// The description for the server.
+    pub description: Option<String>,
+}
+
+impl ServerPreview {
     /// Returns the formatted URL of the server's icon.
     ///
     /// Returns None if the server does not have an icon.
@@ -325,6 +345,24 @@ impl ServerInfo {
         self.icon
             .as_ref()
             .map(|icon| format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
+    }
+
+    /// Returns the formatted URL of the server's banner.
+    ///
+    /// Returns None if the server does not have an banner.
+    pub fn splash_url(&self) -> Option<String> {
+        self.splash
+            .as_ref()
+            .map(|icon| format!(cdn_concat!("/splashes/{}/{}.jpg"), self.id, icon))
+    }
+
+    /// Returns the formatted URL of the server's discovery banner.
+    ///
+    /// Returns None if the server does not have an discovery banner.
+    pub fn discovery_splash_url(&self) -> Option<String> {
+        self.discovery_splash
+            .as_ref()
+            .map(|icon| format!(cdn_concat!("/discovery-splashes/{}/{}.jpg"), self.id, icon))
     }
 }
 
@@ -348,7 +386,6 @@ pub struct Server {
     pub default_message_notifications: u64,
     pub mfa_level: u64,
 }
-serial_decode!(Server);
 
 impl Server {
     /// Returns the formatted URL of the server's icon.
@@ -367,7 +404,6 @@ impl Server {
 pub struct ServerPrune {
     pub pruned: u64,
 }
-serial_decode!(ServerPrune);
 
 /// Information about a role
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -383,7 +419,6 @@ pub struct Role {
     pub mentionable: bool,
     pub permissions: Permissions,
 }
-serial_decode!(Role);
 
 impl Role {
     /// Return a `Mention` which will ping members of this role.
@@ -399,7 +434,6 @@ pub struct Ban {
     reason: Option<String>,
     user: User,
 }
-serial_decode!(Ban);
 
 /// Broadly-applicable user information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -413,7 +447,6 @@ pub struct User {
     #[serde(default)]
     pub bot: bool,
 }
-serial_decode!(User);
 
 impl User {
     /// Return a `Mention` which will ping this user.
@@ -442,7 +475,6 @@ pub struct Member {
     pub mute: bool,
     pub deaf: bool,
 }
-serial_decode!(Member);
 
 impl Member {
     /// Get this member's nickname if present or their username otherwise.
@@ -459,7 +491,7 @@ impl Member {
 #[derive(Debug, Clone)]
 pub enum Channel {
     /// Text channel to another user
-    Private(PrivateChannel),
+    Private(DirectMessage),
     /// A group channel separate from a server
     Group(Group),
     /// Voice or text channel within a server
@@ -476,7 +508,7 @@ impl Channel {
         // https://discord.com/developers/docs/resources/channel#channel-object-channel-types
         match req!(map.get("type").and_then(|x| x.as_u64())) {
             0 | 2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
-            1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
+            1 => DirectMessage::decode(Value::Object(map)).map(Channel::Private),
             3 => Group::decode(Value::Object(map)).map(Channel::Group),
             4 => ChannelCategory::decode(Value::Object(map)).map(Channel::Category),
             5 => Ok(Channel::Announcements),
@@ -494,10 +526,13 @@ pub struct Group {
     #[serde(rename = "id")]
     pub channel_id: ChannelId,
     pub icon: Option<String>,
+
     pub last_message_id: Option<MessageId>,
     pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
+
     pub name: Option<String>,
     pub owner_id: UserId,
+
     #[serde(default)]
     pub recipients: Vec<User>,
 
@@ -506,7 +541,6 @@ pub struct Group {
     #[serde(skip_serializing)]
     _type: ::serde::de::IgnoredAny,
 }
-serial_decode!(Group);
 
 impl Group {
     /// Get this group's name, building a default if needed
@@ -550,12 +584,12 @@ pub struct Call {
     pub unavailable: bool,
     pub voice_states: Vec<VoiceState>,
 }
-serial_decode!(Call);
 
-/// Private text channel to another user
+/// Private text channel to another user.
+///
 /// https://discord.com/developers/docs/resources/channel#channel-object
 #[derive(Debug, Clone)]
-pub struct PrivateChannel {
+pub struct DirectMessage {
     pub id: ChannelId,
     pub kind: ChannelType,
     pub recipient: User,
@@ -565,8 +599,8 @@ pub struct PrivateChannel {
     pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 }
 
-impl PrivateChannel {
-    pub fn decode(value: Value) -> Result<PrivateChannel> {
+impl DirectMessage {
+    pub fn decode(value: Value) -> Result<DirectMessage> {
         let mut value = into_map(value)?;
         let mut recipients = decode_array(remove(&mut value, "recipients")?, User::decode)?;
         if recipients.len() != 1 {
@@ -578,7 +612,7 @@ impl PrivateChannel {
         }
         warn_json!(
             value,
-            PrivateChannel {
+            DirectMessage {
                 id: remove(&mut value, "id").and_then(ChannelId::decode)?,
                 kind: remove(&mut value, "type").and_then(serde)?,
                 recipient: recipients.remove(0),
@@ -808,7 +842,6 @@ pub struct Attachment {
     /// Height if the file is an image
     pub height: Option<u64>,
 }
-serial_decode!(Attachment);
 
 impl Attachment {
     /// Get the dimensions of the attachment if it is an image.
@@ -867,27 +900,27 @@ pub struct Message {
 
     pub flags: MessageFlags,
 }
-serial_decode!(Message);
 
 /// The type of a message
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum MessageType {
     /// A regular, text-based message
-    Regular,
+    Regular = 0,
     /// A recipient was added to the group
-    GroupRecipientAddition,
+    GroupRecipientAddition = 1,
     /// A recipient was removed from the group
-    GroupRecipientRemoval,
+    GroupRecipientRemoval = 3,
     /// A group call was created
-    GroupCallCreation,
+    GroupCallCreation = 4,
     /// A group name was updated
-    GroupNameUpdate,
+    GroupNameUpdate = 5,
     /// A group icon was updated
-    GroupIconUpdate,
+    GroupIconUpdate = 6,
     /// A message was pinned
-    MessagePinned,
+    MessagePinned = 7,
     /// A user joined a server and a welcome message was generated
-    UserJoined,
+    UserJoined = 8,
 
     UserPremiumGuildSubscription = 8,
     UserPremiumGuildSubscriptionTier1 = 9,
@@ -908,40 +941,14 @@ pub enum MessageType {
     AutoModerationAction = 24,
 }
 
-serial_use_mapping!(MessageType, numeric);
-serial_numbers! { MessageType;
-    Regular, 0;
-    GroupRecipientAddition, 1;
-    GroupRecipientRemoval, 2;
-    GroupCallCreation, 3;
-    GroupNameUpdate, 4;
-    GroupIconUpdate, 5;
-    MessagePinned, 6;
-    UserJoined, 7;
-    UserPremiumGuildSubscription, 8;
-    UserPremiumGuildSubscriptionTier1, 9;
-    UserPremiumGuildSubscriptionTier2, 10;
-    UserPremiumGuildSubscriptionTier3, 11;
-    ChannelFollowAdd, 12;
-    GuildDiscoveryDisqualified, 14;
-    GuildDiscoveryGracePeriodInitialWarning, 16;
-    GuildDiscoveryGracePeriodFinalWarning, 17;
-    ThreadCreated, 18;
-    GuildDiscoveryRequalified, 15;
-    Reply, 19;
-    ChatInputCommand, 20;
-    ThreadStarterMessage, 21;
-    GuildInviteReminder, 22;
-    ContextMenuCommand, 23;
-    AutoModerationAction, 24;
-}
-
 /// Information about an invite
 #[derive(Debug, Clone)]
 pub struct Invite {
+    /// The unique code of the invite.
     pub code: String,
-    pub server_id: ServerId,
-    pub server_name: String,
+
+    pub server: ServerPreview,
+
     pub channel_type: ChannelType,
     pub channel_id: ChannelId,
     pub channel_name: String,
