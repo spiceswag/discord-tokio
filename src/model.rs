@@ -4,7 +4,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::str::FromStr;
 
 use bitflags::bitflags;
 use chrono::prelude::*;
@@ -722,9 +721,12 @@ impl User {
 /// Information about a member of a server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Member {
+    /// The user this member structure concerns
     pub user: User,
-    pub roles: Vec<RoleId>,
+    /// The user's server nickname
     pub nick: Option<String>,
+
+    pub roles: Vec<RoleId>,
     pub joined_at: String,
     pub mute: bool,
     pub deaf: bool,
@@ -981,6 +983,8 @@ impl PermissionOverwrite {
 
 bitflags! {
     /// Set of permissions assignable to a Role or PermissionOverwrite
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     pub struct Permissions: u64 {
         const CREATE_INVITE = 1;
         const KICK_MEMBERS = 1 << 1;
@@ -1026,14 +1030,6 @@ bitflags! {
         const VOICE_MOVE_MEMBERS = 1 << 24;
         /// When denied, members must use push-to-talk
         const VOICE_USE_VAD = 1 << 25;
-    }
-}
-
-serial_single_field!(Permissions as bits: u64);
-
-impl Permissions {
-    pub fn decode(value: Value) -> Result<Permissions> {
-        Ok(Self::from_bits_truncate(req!(value.as_u64())))
     }
 }
 
@@ -1112,7 +1108,9 @@ bitflags! {
     /// Sets of flags that may be set on a message.
     ///
     /// See https://discord.com/developers/docs/resources/channel#message-object-message-flags
-    pub struct MessageFlags: u64 {
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
+    pub struct MessageFlags: u16 {
         const CROSSPOSTED = 1 << 0;
         const IS_CROSSPOST = 1 << 1;
         const SUPPRESS_EMBEDS = 1 << 2;
@@ -1120,8 +1118,6 @@ bitflags! {
         const URGENT = 1 << 4;
     }
 }
-
-serial_single_field!(MessageFlags as bits: u64);
 
 /// Message transmitted over a text channel
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1157,42 +1153,85 @@ pub struct Message {
 
 /// The type of a message
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[repr(u8)]
 pub enum MessageType {
     /// A regular, text-based message
-    Regular = 0,
-    /// A recipient was added to the group
-    GroupRecipientAddition = 1,
-    /// A recipient was removed from the group
-    GroupRecipientRemoval = 3,
-    /// A group call was created
-    GroupCallCreation = 4,
-    /// A group name was updated
-    GroupNameUpdate = 5,
-    /// A group icon was updated
-    GroupIconUpdate = 6,
-    /// A message was pinned
-    MessagePinned = 7,
-    /// A user joined a server and a welcome message was generated
-    UserJoined = 8,
+    Default = 0,
 
-    UserPremiumGuildSubscription = 8,
-    UserPremiumGuildSubscriptionTier1 = 9,
-    UserPremiumGuildSubscriptionTier2 = 10,
-    UserPremiumGuildSubscriptionTier3 = 11,
+    /// A recipient was added to the group
+    #[serde(rename = "RECIPIENT_ADD")]
+    GroupRecipientAdded = 1,
+    /// A recipient was removed from the group
+    #[serde(rename = "RECIPIENT_REMOVE")]
+    GroupRecipientRemoved = 2,
+
+    /// A group call was created
+    #[serde(rename = "CALL")]
+    GroupCall = 3,
+    /// A group name was updated
+    GroupNameChange = 4,
+    /// A group icon was updated
+    GroupIconChange = 5,
+
+    /// A message was pinned
+    #[serde(rename = "CHANNEL_PINNED_MESSAGE")]
+    MessagePinned = 6,
+
+    /// A user joined a server and a welcome message was generated
+    #[serde(rename = "USER_JOIN")]
+    UserJoined = 7,
+
+    /// Server has been boosted.
+    #[serde(rename = "GUILD_BOOST")]
+    ServerBoost = 8,
+    /// Server has been boosted and just reached level 1 boost.
+    #[serde(rename = "GUILD_BOOST_TIER_1")]
+    ServerBoostTier1 = 9,
+    /// Server has been boosted and just reached level 2 boost.
+    #[serde(rename = "GUILD_BOOST_TIER_2")]
+    ServerBoostTier2 = 10,
+    /// Server has been boosted and just reached level 3 boost.
+    #[serde(rename = "GUILD_BOOST_TIER_3")]
+    ServerBoostTier3 = 11,
+
     ChannelFollowAdd = 12,
+    /// The server is no longer in the discovery directory.
     GuildDiscoveryDisqualified = 14,
+    /// The server has met the criteria for entering the discovery directory again.
     GuildDiscoveryRequalified = 15,
+    /// The server has dropped from the criteria for server discovery
+    /// and the first warning has been sent.
     GuildDiscoveryGracePeriodInitialWarning = 16,
+    /// The server has dropped from the criteria for server discovery
+    /// and the last warning has been sent.
     GuildDiscoveryGracePeriodFinalWarning = 17,
+    /// A user started a thread
     ThreadCreated = 18,
     // Replies only have type `19` in API v8. In v6, they are still type `0`.
+    /// A reply message.
     Reply = 19,
+    /// A bot has responded to a command.
     ChatInputCommand = 20,
+    /// A message that a standalone thread has been
+    /// started without a message in the main channel.
     ThreadStarterMessage = 21,
     GuildInviteReminder = 22,
     ContextMenuCommand = 23,
+    /// The auto moderation tool has taken an action.
     AutoModerationAction = 24,
+    /// A member has bought a role subscription.
+    RoleSubscriptionPurchase = 25,
+    InteractionPremiumUpsell = 26,
+    /// A stage session has been started.
+    StageStart = 27,
+    /// A stage session has ended.
+    StageEnd = 28,
+    /// A member has been promoted to speaker on a stage session.
+    StageSpeaker = 29,
+    /// The topic for the stage session has been set.
+    StageTopic = 31,
+    GuildApplicationPremiumSubscription = 32,
 }
 
 /// Information about an invite
@@ -1200,11 +1239,14 @@ pub enum MessageType {
 pub struct Invite {
     /// The unique code of the invite.
     pub code: String,
-
+    /// The server you will be added to.
     pub server: ServerPreview,
 
-    pub channel_type: ChannelType,
+    /// The ID of the channel you're being invited to
     pub channel_id: ChannelId,
+    /// The type of channel you're being invited to
+    pub channel_type: ChannelType,
+    /// The name of the channel you're being invited to
     pub channel_name: String,
 }
 
@@ -1305,7 +1347,6 @@ pub struct VoiceRegion {
     pub optimal: bool,
     pub vip: bool,
 }
-serial_decode!(VoiceRegion);
 
 //=================
 // Event model
@@ -1314,7 +1355,9 @@ bitflags! {
     /// Sets of events a bot desires to receive.
     ///
     /// See https://discord.com/developers/docs/topics/gateway#gateway-intents
-    pub struct Intents: u64 {
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
+    pub struct Intents: u16 {
         const GUILDS = 1 << 0;
         const GUILD_MEMBERS = 1 << 1;
         const GUILD_BANS = 1 << 2;
@@ -1344,45 +1387,47 @@ pub struct ReadState {
     #[serde(default)]
     pub mention_count: u64,
 }
-serial_decode!(ReadState);
 
 /// A user's online presence status
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+///
+/// https://discord.com/developers/docs/topics/gateway-events#update-presence-status-types
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum OnlineStatus {
+    /// The user will not receive notifications.
+    #[serde(rename = "dnd")]
     DoNotDisturb,
+    /// The user appears offline.
+    #[serde(rename = "invisible")]
     Invisible,
+    /// The user is presumed to not be online.
+    #[serde(rename = "offline")]
     Offline,
+    /// The user is online and active within discord.
+    #[serde(rename = "online")]
     Online,
+    /// The user will not receive notifications on a given device.
+    #[serde(rename = "idle")]
     Idle,
 }
 
-serial_use_mapping!(OnlineStatus, named);
-serial_names! { OnlineStatus;
-    DoNotDisturb, "dnd";
-    Invisible, "invisible";
-    Offline, "offline";
-    Online, "online";
-    Idle, "idle";
-}
-string_decode_using_serial_name!(OnlineStatus);
-
 /// A type of game being played.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub enum GameType {
-    Playing,
-    Streaming,
-    Listening,
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum ActivityType {
+    /// The user is playing a game
+    Playing = 0,
+    /// The user is streaming somewhere.
+    /// This game type is accompanied by a purple play button icon in the user's presence.
+    Streaming = 1,
+    /// The user is listening to music on spotify or youtube music.
+    Listening = 2,
+    /// The user has set a custom text status.
     Custom = 4,
+    /// The user is competing.
+    ///
+    /// This activity type goes basically unused
+    /// except as flavor text for bot presences.
     Competing = 5,
-}
-
-serial_use_mapping!(GameType, numeric);
-serial_numbers! { GameType;
-    Playing, 0;
-    Streaming, 1;
-    Listening, 2;
-    Custom, 4;
-    Competing, 5;
 }
 
 /// Information about a game being played
@@ -1392,13 +1437,13 @@ serial_numbers! { GameType;
 pub struct Game {
     pub name: String,
     pub url: Option<String>,
-    pub kind: GameType,
+    pub kind: ActivityType,
 }
 
 impl Game {
     pub fn playing(name: String) -> Game {
         Game {
-            kind: GameType::Playing,
+            kind: ActivityType::Playing,
             name: name,
             url: None,
         }
@@ -1406,7 +1451,7 @@ impl Game {
 
     pub fn streaming(name: String, url: String) -> Game {
         Game {
-            kind: GameType::Streaming,
+            kind: ActivityType::Streaming,
             name: name,
             url: Some(url),
         }
@@ -1429,7 +1474,7 @@ impl Game {
         };
         warn_json!(@"Game", value, Some(Game {
             name: name,
-            kind: kind.and_then(GameType::from_num).unwrap_or(GameType::Playing),
+            kind: kind.and_then(ActivityType::from_num).unwrap_or(ActivityType::Playing),
             url: opt(&mut value, "url", into_string)?,
         }))
     }
@@ -1494,30 +1539,21 @@ pub struct VoiceState {
     pub mute: bool,
     pub deaf: bool,
 }
-serial_decode!(VoiceState);
 
 /// A condition that new users must satisfy before posting in text channels
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum VerificationLevel {
     /// No verification is needed
-    None,
+    None = 0,
     /// Must have a verified email on their Discord account
-    Low,
+    Low = 1,
     /// Must also be registered on Discord for longer than 5 minutes
-    Medium,
+    Medium = 2,
     /// Must also be a member of this server for longer than 10 minutes
-    High,
+    High = 3,
     /// Must have a verified phone on their Discord account
-    Phone,
-}
-
-serial_use_mapping!(VerificationLevel, numeric);
-serial_numbers! { VerificationLevel;
-    None, 0;
-    Low, 1;
-    Medium, 2;
-    High, 3;
-    Phone, 4;
+    Phone = 4,
 }
 
 /// A parter custom emoji
@@ -1530,7 +1566,6 @@ pub struct Emoji {
     pub animated: bool,
     pub roles: Vec<RoleId>,
 }
-serial_decode!(Emoji);
 
 /// A full single reaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1540,7 +1575,6 @@ pub struct Reaction {
     pub user_id: UserId,
     pub emoji: ReactionEmoji,
 }
-serial_decode!(Reaction);
 
 /// Information on a reaction as available at a glance on a message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1549,7 +1583,6 @@ pub struct MessageReaction {
     pub me: bool,
     pub emoji: ReactionEmoji,
 }
-serial_decode!(MessageReaction);
 
 /// Emoji information sent only from reaction events
 #[derive(Debug, Clone, PartialEq)]
@@ -1809,7 +1842,6 @@ pub struct CurrentUser {
     pub bot: bool,
     pub mfa_enabled: bool,
 }
-serial_decode!(CurrentUser);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct CurrentUserPatch {
@@ -1824,7 +1856,6 @@ pub struct CurrentUserPatch {
     pub bot: Option<bool>,
     pub mfa_enabled: Option<bool>,
 }
-serial_decode!(CurrentUserPatch);
 
 impl CurrentUser {
     pub fn update_from(&mut self, patch: &CurrentUserPatch) {
@@ -1955,26 +1986,16 @@ pub struct ApplicationInfo {
 
     pub owner: User,
 }
-serial_decode!(ApplicationInfo);
 
 /// A type of relationship this user has with another.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum RelationshipType {
-    Ignored,
-    Friends,
-    Blocked,
-    IncomingRequest,
-    OutgoingRequest,
-}
-
-serial_decode!(RelationshipType);
-serial_use_mapping!(RelationshipType, numeric);
-serial_numbers! { RelationshipType;
-    Ignored, 0;
-    Friends, 1;
-    Blocked, 2;
-    IncomingRequest, 3;
-    OutgoingRequest, 4;
+    Ignored = 0,
+    Friends = 1,
+    Blocked = 2,
+    IncomingRequest = 3,
+    OutgoingRequest = 4,
 }
 
 /// Information on a friendship relationship this user has with another.
@@ -1985,7 +2006,6 @@ pub struct Relationship {
     pub kind: RelationshipType,
     pub user: User,
 }
-serial_decode!(Relationship);
 
 /// Flags for who may add this user as a friend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1998,7 +2018,6 @@ pub struct FriendSourceFlags {
     #[serde(rename = "mutual_guilds")]
     pub mutual_servers: bool,
 }
-serial_decode!(FriendSourceFlags);
 
 /// User settings usually used to influence client behavior
 #[derive(Debug, Clone)]
@@ -2090,7 +2109,6 @@ pub struct ChannelOverride {
     pub message_notifications: NotificationLevel,
     pub muted: bool,
 }
-serial_decode!(ChannelOverride);
 
 /// User settings which influence per-server notification behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2103,7 +2121,6 @@ pub struct UserServerSettings {
     pub suppress_everyone: bool,
     pub channel_overrides: Vec<ChannelOverride>,
 }
-serial_decode!(UserServerSettings);
 
 /// Progress through the Discord tutorial
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2111,7 +2128,6 @@ pub struct Tutorial {
     pub indicators_suppressed: bool,
     pub indicators_confirmed: Vec<String>,
 }
-serial_decode!(Tutorial);
 
 /// Discord status maintenance message.
 ///
@@ -2124,7 +2140,6 @@ pub struct Maintenance {
     pub start: String,
     pub stop: String,
 }
-serial_decode!(Maintenance);
 
 /// An incident retrieved from the Discord status page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2144,7 +2159,6 @@ pub struct Incident {
     pub resolved_at: Option<String>,
     pub updated_at: String,
 }
-serial_decode!(Incident);
 
 /// An update to an incident from the Discord status page. This will typically
 /// state what new information has been discovered about an incident.
@@ -2161,7 +2175,6 @@ pub struct IncidentUpdate {
     pub display_at: String,
     pub updated_at: String,
 }
-serial_decode!(IncidentUpdate);
 
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
@@ -2193,28 +2206,67 @@ pub struct ActivityEmoji {
     pub id: Option<EmojiId>,
     pub animated: Option<bool>,
 }
-serial_decode!(ActivityEmoji);
 
 /// User's activity
 /// https://discord.com/developers/docs/topics/gateway#activity-object
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Activity {
+    /// The activity's name.
+    pub name: String,
+
     /// 0 - Game, 1 - Streaming, 2 - Listening, 4 - Custom
     /// https://discord.com/developers/docs/topics/gateway#activity-object-activity-types
     #[serde(rename = "type")]
-    pub kind: i8,
-    /// This is where the custom user status appears
-    pub state: Option<String>,
-    /// the emoji used for a custom status
-    pub emoji: Option<ActivityEmoji>,
-    /// unix timestamp of when the activity was added to the user's session
-    pub created_at: u64,
-    /// what the player is currently doing
-    pub details: Option<String>,
-    /// stream url, is validated when type is 1
+    pub kind: ActivityType,
+
+    /// Stream url, is validated as a URL
+    /// when type is [`ActivityType::Streaming`], but may always be set.
     pub url: Option<String>,
+
+    /// Timestamp of when the activity was added to the user's session.
+    #[serde(with = "chrono::serde::ts_milliseconds")]
+    pub created_at: DateTime<Utc>,
+
+    /// Application ID for the game
+    pub application_id: Option<String>,
+
+    /// What the player is currently doing.
+    pub details: Option<String>,
+    /// User's current party status, or text used for a custom status.
+    pub state: Option<String>,
+    /// The emoji used for a custom status
+    pub emoji: Option<ActivityEmoji>,
+
+    pub party: (),
+    pub assets: (),
+    pub secrets: (),
+
+    /// Whether or not the activity is an instanced game session.
+    pub instance: bool,
+
+    /// Activity flags `OR`d together, describes what the payload includes.
+    pub flags: ActivityFlags,
+
+    /// Custom buttons shown in the Rich Presence (max 2).
+    pub buttons: Option<[(); 2]>,
 }
-serial_decode!(Activity);
+
+bitflags! {
+    /// Informational flags about an activity and what can be done with it.
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
+    pub struct ActivityFlags: u16 {
+        const INSTANCE = 1 << 0;
+        const JOIN = 1 << 1;
+        const SPECTATE = 1 << 2;
+        const JOIN_REQUEST = 1 << 3;
+        const SYNC = 1 << 4;
+        const PLAY = 1 << 5;
+        const PARTY_PRIVACY_FRIENDS = 1 << 6;
+        const PARTY_PRIVACY_VOICE_CHANNEL = 1 << 7;
+        const EMBEDDED = 1 << 8;
+    }
+}
 
 /// Event received over a websocket connection
 #[derive(Debug, Clone)]
