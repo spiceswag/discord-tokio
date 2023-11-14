@@ -99,28 +99,6 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
     }
 }
 
-/// Deserialize a single-field struct like a newtype struct.
-macro_rules! serial_single_field {
-    ($typ:ident as $field:ident: $inner:path) => {
-        impl ::serde::Serialize for $typ {
-            fn serialize<S: ::serde::ser::Serializer>(
-                &self,
-                s: S,
-            ) -> ::std::result::Result<S::Ok, S::Error> {
-                self.$field.serialize(s)
-            }
-        }
-
-        impl<'d> ::serde::Deserialize<'d> for $typ {
-            fn deserialize<D: ::serde::de::Deserializer<'d>>(
-                d: D,
-            ) -> ::std::result::Result<$typ, D::Error> {
-                <$inner as ::serde::de::Deserialize>::deserialize(d).map(|v| $typ { $field: v })
-            }
-        }
-    };
-}
-
 /// Special support for the oddly complex `ReactionEmoji`.
 pub mod reaction_emoji {
     use super::*;
@@ -189,38 +167,6 @@ pub mod named {
         }
 
         d.deserialize_any(NameVisitor(PhantomData))
-    }
-}
-macro_rules! serial_names {
-    ($typ:ident; $($entry:ident, $value:expr;)*) => {
-        impl $typ {
-            pub fn name(&self) -> &'static str {
-                match *self {
-                    $($typ::$entry => $value,)*
-                }
-            }
-
-            pub fn from_name(name: &str) -> Option<Self> {
-                match name {
-                    $($value => Some($typ::$entry),)*
-                    _ => None,
-                }
-            }
-        }
-
-        impl crate::serial::named::NamedEnum for $typ {
-            fn name(&self) -> &'static str {
-                self.name()
-            }
-
-            fn from_name(name: &str) -> Option<Self> {
-                Self::from_name(name)
-            }
-
-            fn typename() -> &'static str {
-                stringify!($typ)
-            }
-        }
     }
 }
 

@@ -9,7 +9,7 @@ pub struct State {
     user: CurrentUser,
     servers: Vec<LiveServer>,
     unavailable_servers: Vec<ServerId>,
-    private_channels: Vec<PrivateChannel>,
+    private_channels: Vec<DirectMessage>,
     groups: BTreeMap<ChannelId, Group>,
     calls: BTreeMap<ChannelId, Call>,
     presences: Vec<Presence>,
@@ -32,7 +32,7 @@ impl State {
             }
         }
         let mut groups: BTreeMap<ChannelId, Group> = BTreeMap::new();
-        let mut private_channels: Vec<PrivateChannel> = vec![];
+        let mut private_channels: Vec<DirectMessage> = vec![];
         for channel in ready.private_channels {
             match channel {
                 Channel::Private(channel) => private_channels.push(channel),
@@ -572,7 +572,7 @@ impl State {
 
     /// Get the active 1-on-1 private channels with other users.
     #[inline]
-    pub fn private_channels(&self) -> &[PrivateChannel] {
+    pub fn private_channels(&self) -> &[DirectMessage] {
         &self.private_channels
     }
 
@@ -709,7 +709,7 @@ fn update_presence(vec: &mut Vec<Presence>, presence: &Presence) {
 #[derive(Debug, Clone, Copy)]
 pub enum ChannelRef<'a> {
     /// A private channel
-    Private(&'a PrivateChannel),
+    Private(&'a DirectMessage),
     /// A group channel
     Group(&'a Group),
     /// A public channel and its server

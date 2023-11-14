@@ -27,7 +27,6 @@
 
 #![warn(missing_docs)]
 #![allow(deprecated)]
-#![feature(async_fn_in_trait)]
 
 use std::collections::BTreeMap;
 
@@ -306,7 +305,7 @@ impl Discord {
     ) -> Result<Channel> {
         let map = json! {{
             "name": name,
-            "type": kind.num(),
+            "type": kind as u8,
         }};
 
         let json = self
@@ -383,7 +382,7 @@ impl Discord {
                 map.insert("name".into(), json!(group.name));
             }
             Channel::Category(_) => {}
-            Channel::News => {}
+            Channel::Announcements => {}
             Channel::Store => {}
         };
         let map = EditChannel::apply(f, map);
@@ -986,7 +985,7 @@ impl Discord {
     }
 
     /// Get the list of servers this user knows about.
-    pub async fn get_servers(&self) -> Result<Vec<ServerInfo>> {
+    pub async fn get_servers(&self) -> Result<Vec<ServerPreview>> {
         Ok(self
             .empty_request("/users/@me/guilds", Method::GET)
             .await?
@@ -1374,13 +1373,11 @@ impl Discord {
 
     /// Retrieve the list of roles for a server.
     pub async fn get_roles(&self, server: ServerId) -> Result<Vec<Role>> {
-        let response = self
+        Ok(self
             .empty_request(&format!("/guilds/{server}/roles"), Method::GET)
             .await?
             .json()
-            .await?;
-
-        decode_array(response, Role::decode)
+            .await?)
     }
 
     /// Create a new role on a server.
@@ -1401,15 +1398,13 @@ impl Discord {
             "mentionable": mentionable,
         }};
 
-        let response = self
+        Ok(self
             .request(&format!("/guilds/{server}/roles"), Method::POST, |req| {
                 req.json(&map)
             })
             .await?
             .json()
-            .await?;
-
-        Role::decode(response)
+            .await?)
     }
 
     /// Create a new role on a server.
@@ -1420,14 +1415,13 @@ impl Discord {
     ) -> Result<Role> {
         let map = EditRole::build(f);
 
-        let response = self
+        Ok(self
             .request(&format!("/guilds/{server}/roles"), Method::POST, |req| {
                 req.json(&map)
             })
             .await?
             .json()
-            .await?;
-        Role::decode(response)
+            .await?)
     }
 
     /// Modify a role on a server.
@@ -1439,7 +1433,7 @@ impl Discord {
     ) -> Result<Role> {
         let map = EditRole::build(f);
 
-        let response = self
+        Ok(self
             .request(
                 &format!("/guilds/{server}/roles/{role}"),
                 Method::PATCH,
@@ -1447,8 +1441,7 @@ impl Discord {
             )
             .await?
             .json()
-            .await?;
-        Role::decode(response)
+            .await?)
     }
 
     /// Reorder the roles on a server.
@@ -1467,14 +1460,13 @@ impl Discord {
             })
             .collect();
 
-        let response = self
+        Ok(self
             .request(&format!("/guilds/{server}/roles"), Method::PATCH, |req| {
                 req.json(&map)
             })
             .await?
             .json()
-            .await?;
-        decode_array(response, Role::decode)
+            .await?)
     }
 
     /// Remove specified role from a server.
@@ -1487,7 +1479,7 @@ impl Discord {
 
     /// Create a private channel with the given user, or return the existing
     /// one if it exists.
-    pub async fn create_private_channel(&self, recipient: UserId) -> Result<PrivateChannel> {
+    pub async fn create_private_channel(&self, recipient: UserId) -> Result<DirectMessage> {
         let map = json! {{ "recipient_id": recipient }};
 
         let response = self
@@ -1495,7 +1487,7 @@ impl Discord {
             .await?
             .json()
             .await?;
-        PrivateChannel::decode(response)
+        DirectMessage::decode(response)
     }
 
     /// Get the URL at which a user's avatar is located.
@@ -1524,7 +1516,7 @@ impl Discord {
 
     /// Create a new DM channel with a user.
     /// https://discord.com/developers/docs/resources/user#create-dm
-    pub async fn create_dm(&self, recipient_id: UserId) -> Result<PrivateChannel> {
+    pub async fn create_dm(&self, recipient_id: UserId) -> Result<DirectMessage> {
         let map = json! {{
             "recipient_id": recipient_id.0,
         }};
@@ -1535,7 +1527,7 @@ impl Discord {
             .json()
             .await?;
 
-        PrivateChannel::decode(json)
+        DirectMessage::decode(json)
     }
 
     /// Get the logged-in user's profile.
@@ -1616,7 +1608,8 @@ impl Discord {
         if let Some(serde_json::Value::String(token)) = json.remove("token") {
             self.token = token;
         }
-        CurrentUser::decode(serde_json::Value::Object(json))
+
+        Ok(serde_json::from_value(serde_json::to_value(json)?)?)
     }
 
     /// Get the list of available voice regions for a server.
@@ -1808,7 +1801,7 @@ pub async fn get_unresolved_incidents() -> Result<Vec<Incident>> {
             .await?;
 
     match response.remove("incidents") {
-        Some(incidents) => decode_array(incidents, Incident::decode),
+        Some(incidents) => Ok(serde_json::from_value(incidents)?),
         None => Ok(vec![]),
     }
 }
@@ -1825,7 +1818,7 @@ pub async fn get_active_maintenances() -> Result<Vec<Maintenance>> {
             .await?;
 
     match response.remove("scheduled_maintenances") {
-        Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
+        Some(scheduled_maintenances) => Ok(serde_json::from_value(scheduled_maintenances)?),
         None => Ok(vec![]),
     }
 }
@@ -1842,7 +1835,7 @@ pub async fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
             .await?;
 
     match response.remove("scheduled_maintenances") {
-        Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
+        Some(scheduled_maintenances) => Ok(serde_json::from_value(scheduled_maintenances)?),
         None => Ok(vec![]),
     }
 }

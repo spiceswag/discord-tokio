@@ -7,6 +7,8 @@ use tracing::{error, warn};
 
 use crate::{Error, Result};
 
+// suboptimal performance: rate-limit mutex not released when sleeping
+
 #[derive(Debug, Default)]
 pub struct RateLimits {
     // Mutexes here are expected to have basically 0 wait time
