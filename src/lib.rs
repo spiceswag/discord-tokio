@@ -383,7 +383,6 @@ impl Discord {
             }
             Channel::Category(_) => {}
             Channel::Announcements => {}
-            Channel::Store => {}
         };
         let map = EditChannel::apply(f, map);
 
@@ -1717,6 +1716,7 @@ impl Discord {
         }
     }
 
+    /*
     /// Establish a websocket connection over which events can be received.
     ///
     /// Also returns the `ReadyEvent` sent by Discord upon establishing the
@@ -1754,6 +1754,7 @@ impl Discord {
         let url = self.get_gateway_url().await?;
         Ok(connection::ConnectionBuilder::new(url, &self.token))
     }
+    */
 
     async fn get_gateway_url(&self) -> Result<String> {
         let mut response: BTreeMap<String, String> = self
