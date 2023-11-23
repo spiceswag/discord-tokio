@@ -12,7 +12,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use websockets::{Message, WebSocketError, WebSocketReadHalf, WebSocketWriteHalf};
 
-use crate::{model::GatewayEvent, Error};
+use crate::{model::RawGatewayEvent, Error};
 
 /// JSON-encoded values received from a WebSocket.
 #[derive(Debug)]
@@ -217,7 +217,7 @@ impl GatewayEventStream {
 }
 
 impl Stream for GatewayEventStream {
-    type Item = Result<GatewayEvent, Error>;
+    type Item = Result<RawGatewayEvent, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let message = match ready!(self.json.poll_next_unpin(cx)) {
@@ -231,6 +231,6 @@ impl Stream for GatewayEventStream {
             None => return Poll::Ready(None),
         };
 
-        Poll::Ready(Some(Ok(GatewayEvent::decode(message)?)))
+        Poll::Ready(Some(Ok(RawGatewayEvent::decode(message)?)))
     }
 }

@@ -38,8 +38,8 @@ mod io;
 mod ratelimit;
 mod state;
 
-// #[cfg(feature = "voice")]
-// pub mod voice;
+mod rest;
+pub use rest::*;
 
 macro_rules! cdn_concat {
     ($e:expr) => {
@@ -48,10 +48,24 @@ macro_rules! cdn_concat {
     };
 }
 
+/// Struct and enum definitions of values in the Discord model.
+pub mod model {
+    mod event;
+    pub use self::event::*;
+
+    mod frozen;
+    pub use frozen::*;
+
+    mod live;
+    pub use live::*;
+}
+
+// #[cfg(feature = "voice")]
+// pub mod voice;
+
 #[macro_use]
 mod serial;
 pub mod builders;
-pub mod model;
 
 pub use error::{Error, Result};
 pub use state::{ChannelRef, State};
@@ -357,8 +371,8 @@ impl Discord {
         // Work around the fact that this supposed PATCH call actually requires all fields
         let mut map = Object::new();
         match self.get_channel(channel).await? {
-            Channel::Private(_) => return Err(Error::Other("Can not edit private channels")),
-            Channel::Public(channel) => {
+            Channel::DirectMessage(_) => return Err(Error::Other("Can not edit private channels")),
+            Channel::Server(channel) => {
                 map.insert("name".into(), channel.name.into());
                 map.insert("position".into(), channel.position.into());
 
@@ -1481,12 +1495,11 @@ impl Discord {
     pub async fn create_private_channel(&self, recipient: UserId) -> Result<DirectMessage> {
         let map = json! {{ "recipient_id": recipient }};
 
-        let response = self
+        Ok(self
             .request("/user/@me/channels", Method::POST, |req| req.json(&map))
             .await?
             .json()
-            .await?;
-        DirectMessage::decode(response)
+            .await?)
     }
 
     /// Get the URL at which a user's avatar is located.
@@ -1520,13 +1533,11 @@ impl Discord {
             "recipient_id": recipient_id.0,
         }};
 
-        let json = self
+        Ok(self
             .request("/users/@me/channels", Method::POST, |req| req.json(&map))
             .await?
             .json()
-            .await?;
-
-        DirectMessage::decode(json)
+            .await?)
     }
 
     /// Get the logged-in user's profile.

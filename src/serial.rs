@@ -1,7 +1,6 @@
 //! Serde integration support.
 
 use std::fmt;
-use std::marker::PhantomData;
 
 use serde::de::{Error, Unexpected, Visitor};
 use serde::*;
@@ -108,23 +107,31 @@ pub mod reaction_emoji {
     struct EmojiSer<'s> {
         name: &'s str,
         id: Option<EmojiId>,
+        animated: Option<bool>,
     }
 
     #[derive(Deserialize)]
     struct EmojiDe {
         name: String,
         id: Option<EmojiId>,
+        animated: Option<bool>,
     }
 
     pub fn serialize<S: Serializer>(v: &ReactionEmoji, s: S) -> Result<S::Ok, S::Error> {
         (match *v {
-            ReactionEmoji::Unicode(ref name) => EmojiSer {
+            ReactionEmoji::Unicode { ref name } => EmojiSer {
                 name: name,
                 id: None,
+                animated: None,
             },
-            ReactionEmoji::Custom { ref name, id } => EmojiSer {
-                name: name,
+            ReactionEmoji::Custom {
+                ref name,
+                id,
+                animated,
+            } => EmojiSer {
                 id: Some(id),
+                name: name,
+                animated: Some(animated),
             },
         })
         .serialize(s)
@@ -132,131 +139,146 @@ pub mod reaction_emoji {
 
     pub fn deserialize<'d, D: Deserializer<'d>>(d: D) -> Result<ReactionEmoji, D::Error> {
         Ok(match EmojiDe::deserialize(d)? {
-            EmojiDe { name, id: None } => ReactionEmoji::Unicode(name),
-            EmojiDe { name, id: Some(id) } => ReactionEmoji::Custom { name: name, id: id },
+            EmojiDe {
+                name,
+                id: None,
+                animated: None,
+            } => ReactionEmoji::Unicode { name },
+            EmojiDe {
+                name,
+                id: Some(id),
+                animated: Some(animated),
+            } => ReactionEmoji::Custom { name, id, animated },
+            _ => {
+                return Err(Error::custom(
+                    "unexpected combination of fields `id` and `animated`",
+                ))
+            }
         })
     }
 }
 
-/// Support for named enums.
-pub mod named {
-    use super::*;
+/// Make sure a field holds a certain numeric value, or fail otherwise.
+#[derive(Debug, Clone)]
+pub struct Eq<const N: u64>;
 
-    pub trait NamedEnum: Sized {
-        fn name(&self) -> &'static str;
-        fn from_name(name: &str) -> Option<Self>;
-        fn typename() -> &'static str;
-    }
+impl<'de, const N: u64> Deserialize<'de> for Eq<N> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct NumberVisitor<const N: u64>;
 
-    pub fn serialize<T: NamedEnum, S: Serializer>(v: &T, s: S) -> Result<S::Ok, S::Error> {
-        v.name().serialize(s)
-    }
+        impl<'d, const N: u64> Visitor<'d> for NumberVisitor<N> {
+            type Value = u64;
 
-    pub fn deserialize<'d, T: NamedEnum, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
-        struct NameVisitor<T>(PhantomData<T>);
-        impl<'d, T: NamedEnum> Visitor<'d> for NameVisitor<T> {
-            type Value = T;
-
-            fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-                write!(fmt, "a valid {} name", T::typename())
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "the number {}", N)
             }
 
-            fn visit_str<E: Error>(self, v: &str) -> Result<T, E> {
-                T::from_name(v).ok_or_else(|| E::invalid_value(Unexpected::Str(v), &self))
-            }
-        }
-
-        d.deserialize_any(NameVisitor(PhantomData))
-    }
-}
-
-/// Support for numeric enums.
-pub mod numeric {
-    use super::*;
-
-    pub trait NumericEnum: Sized {
-        fn num(&self) -> u64;
-        fn from_num(num: u64) -> Option<Self>;
-        fn typename() -> &'static str;
-    }
-
-    pub fn serialize<T: NumericEnum, S: Serializer>(v: &T, s: S) -> Result<S::Ok, S::Error> {
-        v.num().serialize(s)
-    }
-
-    pub fn deserialize<'d, T: NumericEnum, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
-        struct NumVisitor<T>(PhantomData<T>);
-        impl<'d, T: NumericEnum> Visitor<'d> for NumVisitor<T> {
-            type Value = T;
-
-            fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-                write!(fmt, "a valid {} number", T::typename())
-            }
-
-            fn visit_i64<E: Error>(self, v: i64) -> Result<T, E> {
-                i64_to_u64(self, v)
-            }
-
-            fn visit_u64<E: Error>(self, v: u64) -> Result<T, E> {
-                T::from_num(v).ok_or_else(|| E::invalid_value(Unexpected::Unsigned(v), &self))
-            }
-        }
-
-        d.deserialize_any(NumVisitor(PhantomData))
-    }
-}
-macro_rules! serial_numbers {
-    ($typ:ident; $($entry:ident, $value:expr;)*) => {
-        impl $typ {
-            pub fn num(&self) -> u64 {
-                match *self {
-                    $($typ::$entry => $value,)*
+            fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Unsigned(v as u64), &self))
                 }
             }
 
-            pub fn from_num(num: u64) -> Option<Self> {
-                match num {
-                    $($value => Some($typ::$entry),)*
-                    _ => None,
+            fn visit_u16<E>(self, v: u16) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Unsigned(v as u64), &self))
+                }
+            }
+
+            fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Unsigned(v as u64), &self))
+                }
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Unsigned(v), &self))
+                }
+            }
+
+            fn visit_i8<E>(self, v: i8) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                // n can't be negative so no checks required
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Signed(v as i64), &self))
+                }
+            }
+
+            fn visit_i16<E>(self, v: i16) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                // n can't be negative so no checks required
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Signed(v as i64), &self))
+                }
+            }
+
+            fn visit_i32<E>(self, v: i32) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                // n can't be negative so no checks required
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Signed(v as i64), &self))
+                }
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                // n can't be negative so no checks required
+                if v as u64 == N {
+                    Ok(v as u64)
+                } else {
+                    Err(E::invalid_value(Unexpected::Signed(v), &self))
                 }
             }
         }
-        impl crate::serial::numeric::NumericEnum for $typ {
-            fn num(&self) -> u64 {
-                self.num()
-            }
 
-            fn from_num(num: u64) -> Option<Self> {
-                Self::from_num(num)
-            }
-
-            fn typename() -> &'static str {
-                stringify!($typ)
-            }
-        }
+        deserializer.deserialize_any(NumberVisitor)?;
+        Ok(Self)
     }
 }
 
-/// Support for using "named" or "numeric" as the default ser/de impl.
-macro_rules! serial_use_mapping {
-    ($typ:ident, $which:ident) => {
-        impl ::serde::Serialize for $typ {
-            #[inline]
-            fn serialize<S: ::serde::ser::Serializer>(
-                &self,
-                s: S,
-            ) -> ::std::result::Result<S::Ok, S::Error> {
-                crate::serial::$which::serialize(self, s)
-            }
-        }
-
-        impl<'d> ::serde::Deserialize<'d> for $typ {
-            #[inline]
-            fn deserialize<D: ::serde::de::Deserializer<'d>>(
-                d: D,
-            ) -> ::std::result::Result<$typ, D::Error> {
-                crate::serial::$which::deserialize(d)
-            }
-        }
-    };
+impl<const N: u64> Serialize for Eq<N> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(N)
+    }
 }
