@@ -67,6 +67,10 @@ snowflake! {
     RoleId;
     /// An identifier for an Emoji
     EmojiId;
+    /// An identifier for a sticker
+    StickerId;
+    /// An identifier for a standard sticker pack.
+    StickerPackId;
     /// An identifier for a scheduled server event
     EventId;
 }
@@ -1390,7 +1394,90 @@ pub struct Emoji {
 
 // Stickers
 
-// todo
+/// A sticker that can be sent in messages.
+///
+/// https://discord.com/developers/docs/resources/sticker#sticker-resource
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Sticker {
+    /// ID of the sticker
+    pub id: StickerId,
+
+    /// Name of the sticker
+    pub name: String,
+    /// Description of the sticker
+    pub description: Option<String>,
+
+    /// Autocomplete/suggestion tags for the sticker (max 200 characters).
+    pub tags: String,
+
+    /// How the sticker image is stored.
+    pub format: StickerFormat,
+
+    /// Where the sticker is from.
+    #[serde(flatten)]
+    pub kind: StickerType,
+}
+
+/// Where the sticker is defined.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StickerType {
+    Standard {
+        /// For standard stickers, ID of the pack the sticker is from.
+        pack_id: StickerPackId,
+
+        /// The standard sticker's sort order within its pack
+        #[serde(rename = "sort_value")]
+        sort: i32,
+
+        #[doc(hidden)]
+        #[serde(rename = "type")]
+        kind: Eq<1>,
+    },
+    Server {
+        /// The server this sticker is from.
+        #[serde(rename = "guild_id")]
+        server_id: ServerId,
+
+        /// Whether this server sticker can be used, may be false due to loss of Server Boosts
+        available: bool,
+
+        /// The user that uploaded the sticker.
+        #[serde(rename = "user")]
+        uploader: User,
+
+        #[doc(hidden)]
+        #[serde(rename = "type")]
+        kind: Eq<2>,
+    },
+}
+
+/// How the sticker image is stored in discord.
+///
+/// https://discord.com/developers/docs/resources/sticker#sticker-object-sticker-format-types
+#[derive(Debug, Clone, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum StickerFormat {
+    Png = 1,
+    APng,
+    Lottie,
+    Gif,
+}
+
+/// The smallest amount of data required to render a sticker. A partial sticker object.
+///
+/// https://discord.com/developers/docs/resources/sticker#sticker-item-object
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StickerItem {
+    /// ID of the sticker
+    pub id: StickerId,
+    /// Name of the sticker
+    pub name: String,
+
+    /// The format of the sticker image.
+    #[serde(rename = "format_type")]
+    pub format: StickerFormat,
+}
 
 // Application
 

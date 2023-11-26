@@ -6,13 +6,13 @@
 use bitflags::bitflags;
 use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use tracing::{error, warn};
 
 use super::{
-    ChannelCategory, ChannelId, ChannelType, Emoji, EmojiId, MessageId, PermissionOverwrite,
-    Permissions, Role, RoleId, Server, ServerChannel, ServerId, User, UserId, VerificationLevel,
+    ApplicationId, ChannelCategory, ChannelId, ChannelType, Emoji, EmojiId, MessageId,
+    PermissionOverwrite, Permissions, Role, RoleId, Server, ServerChannel, ServerId, StickerItem,
+    Thread, User, UserId, VerificationLevel,
 };
 
 // Live Server
@@ -399,35 +399,101 @@ pub struct ActivityEmoji {
 // Messages
 
 /// Message transmitted over a text channel
+///
+/// https://discord.com/developers/docs/resources/channel#message-object
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    /// The ID of the message.
     pub id: MessageId,
+    /// The ID of the channel the message was sent in.
     pub channel_id: ChannelId,
+
+    /// The content of the message
     pub content: String,
+    /// Any attached files.
+    pub attachments: Vec<Attachment>,
+    /// An array of OEmbed embeds in a message.
+    pub embeds: Vec<Embed>,
+
+    /// The user that created the message.
+    pub author: User,
+
+    /// When the message was sent.
+    pub timestamp: DateTime<FixedOffset>,
+    /// The last time the message was edited, if it was ever.
+    pub edited_timestamp: Option<DateTime<FixedOffset>>,
+
+    /// Whether the message should be read out loud on clients focused on the channel.
+    pub tts: bool,
+
+    /// A shorthand property for if the message mentions every user on the server/channel.
+    pub mention_everyone: bool,
+    /// A shorthand property for the users this message mentions.
+    pub mentions: Vec<User>,
+    /// A shorthand property for the whole roles this message mentions.
+    pub mention_roles: Vec<RoleId>,
+
+    /// A shorthand property for all the channels mentioned in a message.
+    ///
+    /// Not all channel mentions in a message will appear in mention_channels.
+    /// Only textual channels that are visible to everyone in a lurkable guild will ever be included.
+    /// Only crossposted messages (via Channel Following) currently include `mention_channels` at all.
+    /// If no mentions in the message meet these requirements, this field will be empty.
+    #[serde(default)]
+    pub mention_channels: Vec<ChannelMention>,
+
+    /// Reactions to the message.
+    #[serde(default)]
+    pub reactions: Vec<Reaction>,
+
+    /// Whether this message is pinned for all to see.
+    pub pinned: bool,
+
+    /// The type of the message.
+    #[serde(rename = "type")]
+    pub kind: MessageType,
+
+    /// Activity included in a message pertaining to a rich presence message.
+    pub activity: Option<MessageActivity>,
+    /// The ID of the application that the message is about, in the case of a rich presence message.
+    pub application_id: Option<ApplicationId>,
+
+    /*
+       /// The application that the message is about, in the case of a rich presence message.
+       pub application: Option<MessageApplication>,
+    */
+    /// Data showing the source of a crosspost, channel follow add, pin, or reply message.
+    pub message_reference: Option<MessageReference>,
+    /// The message associated with the message_reference
+    pub referenced_message: Option<Box<Message>>,
+
+    /// Odd message properties.
+    pub flags: MessageFlags,
+
+    /// The thread started from this message, if any.
+    #[serde(rename = "thread")]
+    pub started_thread: Option<Thread>,
+
+    /// What stickers the message contains.
+    #[serde(default)]
+    #[serde(rename = "sticker_items")]
+    pub stickers: Vec<StickerItem>,
+
+    /// If the message is sent in a thread,
+    /// this is a generally increasing integer (there may be gaps or duplicates)
+    /// that represents the approximate position of the message in a thread,
+    /// it can be used to estimate the relative position of the message
+    /// in a thread in company with `total_messages` on parent thread.
+    #[serde(rename = "position")]
+    pub thread_position: Option<u64>,
+
+    // todo interactions and components
+    // todo role subscriptions
+
     // carry on if nonce is absent or for some reason not a string
     #[serde(deserialize_with = "crate::serial::ignore_errors")]
     #[serde(default)]
     pub nonce: Option<String>,
-    pub tts: bool,
-    pub timestamp: DateTime<FixedOffset>,
-    pub edited_timestamp: Option<DateTime<FixedOffset>>,
-    pub pinned: bool,
-    #[serde(rename = "type")]
-    pub kind: MessageType,
-
-    pub author: User,
-    pub mention_everyone: bool,
-    pub mentions: Vec<User>,
-    pub mention_roles: Vec<RoleId>,
-    #[serde(default)]
-    pub reactions: Vec<MessageReaction>,
-
-    pub attachments: Vec<Attachment>,
-    /// Follows OEmbed standard
-    pub embeds: Vec<Value>,
-    pub referenced_message: Option<Box<Message>>,
-
-    pub flags: MessageFlags,
 }
 
 /// The type of a message
@@ -534,12 +600,15 @@ pub struct Attachment {
     pub id: String,
     /// Short filename for the attachment
     pub filename: String,
+
     /// Shorter URL with message and attachment id
     pub url: String,
     /// Longer URL with large hash
     pub proxy_url: String,
+
     /// Size of the file in bytes
     pub size: u64,
+
     /// Width if the file is an image
     pub width: Option<u64>,
     /// Height if the file is an image
@@ -557,6 +626,197 @@ impl Attachment {
     }
 }
 
+/// An embed attached to a message.
+/// These embeds follow the OEmbed specification.
+///
+/// https://discord.com/developers/docs/resources/channel#message-object
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Embed {
+    /// The title put in the embed.
+    pub title: Option<String>,
+    /// Description of the embed.
+    pub description: Option<String>,
+    /// The Url of the embed.
+    pub url: Option<String>,
+
+    /// Timestamp of the embed content.
+    pub timestamp: Option<DateTime<FixedOffset>>,
+
+    /// The color displayed on a sidebar of the embed.
+    pub color: u64,
+
+    /// Footer information at the bottom of the embed.
+    pub footer: Option<EmbedFooter>,
+
+    /// Embed main image information.
+    pub image: Option<EmbedImage>,
+
+    /// Thumbnail of the embed.
+    pub thumbnail: Option<EmbedThumbnail>,
+
+    /// The video the embed contains.
+    pub video: Option<EmbedVideo>,
+
+    /// The provider of the embed.
+    pub provider: Option<EmbedProvider>,
+
+    /// The author of the embed.
+    pub author: Option<EmbedAuthor>,
+
+    /// Other fields in the embed.
+    #[serde(default)]
+    pub fields: Vec<EmbedField>,
+    // dont bother doing the type of the embed
+}
+
+/// The stuff found at the bottom of the embed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedFooter {
+    /// Footer text.
+    pub text: String,
+    /// URL of footer icon (only supports http(s) and attachments).
+    pub icon_url: Option<String>,
+    /// A proxied URL of the footer icon.
+    pub proxy_icon_url: Option<String>,
+}
+
+/// The main image inside of an embed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedImage {
+    /// Source URL of image (only supports http(s) and attachments)
+    pub url: String,
+    /// A proxied URL of the image.
+    pub proxy_url: Option<String>,
+    /// The height of the image in pixels.
+    pub height: u32,
+    /// The width of the image in pixels.
+    pub width: u32,
+}
+
+/// The thumbnail of an embed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedThumbnail {
+    /// Source URL of the thumbnail image (only supports http(s) and attachments)
+    pub url: String,
+    /// A proxied URL of the image.
+    pub proxy_url: Option<String>,
+    /// The height of the image in pixels.
+    pub height: u32,
+    /// The width of the image in pixels.
+    pub width: u32,
+}
+
+/// The video content of the embed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedVideo {
+    /// Source URL of video.
+    pub url: String,
+    /// A proxied URL of the video.
+    pub proxy_url: Option<String>,
+    /// The height of the video in pixels.
+    pub height: u32,
+    /// The width of the video in pixels.
+    pub width: u32,
+}
+
+/// The provider of the embed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedProvider {
+    /// The name of the provider.
+    pub name: Option<String>,
+    /// The provider's website
+    pub url: Option<String>,
+}
+
+/// The author of an embed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedAuthor {
+    /// The name of the author.
+    pub name: String,
+    /// URL of author (only supports http(s))
+    pub url: Option<String>,
+    /// URL of author icon (only supports http(s) and attachments)
+    pub icon_url: Option<String>,
+    /// A proxied url of author icon
+    pub proxy_icon_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedField {
+    /// The name of the field
+    pub name: String,
+    /// The value of the embed field.
+    pub value: String,
+    /// Whether the field should be displayed inline.
+    #[serde(default)]
+    pub inline: bool,
+}
+
+/// A message activity related to a user's rich presence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageActivity {
+    /// Type of activity to join.
+    #[serde(rename = "type")]
+    pub kind: MessageActivityType,
+    /// The ID of the party a user will be invited to.
+    pub party_id: Option<String>,
+}
+
+/// Type of button to display on the message.
+#[derive(Debug, Clone, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum MessageActivityType {
+    /// Join an activity without a request.
+    Join = 1,
+    /// Spectate on an activity.
+    Spectate,
+    /// Listen along.
+    Listen,
+    /// Join an activity by requesting.
+    JoinRequest = 5,
+}
+
+/// The message associated with the `message_reference`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageReference {
+    /// ID of the originating message.
+    #[serde(rename = "message_id")]
+    pub message: MessageId,
+    /// ID of the originating message's channel.
+    ///
+    /// `channel` is optional when creating a reply,
+    /// but will always be present when receiving an event/response that includes this data model.
+    #[serde(rename = "channel_id")]
+    pub channel: ChannelId,
+    /// ID of the originating message's server.
+    #[serde(rename = "guild_id")]
+    pub server: ServerId,
+
+    /// When sending, whether to error if the referenced message
+    /// doesn't exist instead of sending as a normal (non-reply) message, default `true`.
+    pub fail_if_not_exists: Option<bool>,
+}
+
+/// Information about a mentioned channel.
+///
+/// https://discord.com/developers/docs/resources/channel#channel-mention-object-channel-mention-structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMention {
+    /// ID of the channel.
+    pub id: ChannelId,
+
+    /// Which server the channel is from.
+    #[serde(rename = "guild_id")]
+    pub server: ServerId,
+
+    /// The name of the channel.
+    pub name: String,
+
+    /// What type the channel is.
+    #[serde(rename = "type")]
+    pub kind: ChannelType,
+}
+
 // Message reactions
 
 /// A full single reaction interaction.
@@ -564,7 +824,7 @@ impl Attachment {
 /// Contains no information about the bulk of
 /// the users who may have reacted with an emoji
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Reaction {
+pub struct SingleReaction {
     pub channel_id: ChannelId,
     pub message_id: MessageId,
     pub user_id: UserId,
@@ -573,7 +833,7 @@ pub struct Reaction {
 
 /// Information on a reaction as available at a glance on a message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageReaction {
+pub struct Reaction {
     /// The amount of people that have reacted with this emoji
     pub count: u64,
     /// If the current user has placed this reaction

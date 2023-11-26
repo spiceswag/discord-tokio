@@ -9,9 +9,9 @@ use crate::Object;
 
 use super::{
     Attachment, Call, Channel, ChannelId, CurrentUser, CurrentUserPatch, Emoji, FriendSourceFlags,
-    LiveServer, Member, Message, MessageId, MessageType, PossibleServer, Presence, Reaction,
-    Relationship, RelationshipType, Role, RoleId, Server, ServerId, Tutorial, UnreadMessages, User,
-    UserId, UserServerSettings, UserSettings, VoiceState,
+    LiveServer, Member, Message, MessageId, MessageType, PossibleServer, Presence, Relationship,
+    RelationshipType, Role, RoleId, Server, ServerId, SingleReaction, Tutorial, UnreadMessages,
+    User, UserId, UserServerSettings, UserSettings, VoiceState,
 };
 
 /// Event received over a websocket connection
@@ -169,8 +169,8 @@ pub enum Event {
         last_pin_timestamp: Option<DateTime<FixedOffset>>,
     },
 
-    ReactionAdd(Reaction),
-    ReactionRemove(Reaction),
+    ReactionAdd(SingleReaction),
+    ReactionRemove(SingleReaction),
 
     /// An event type not covered by the above
     Unknown(String, Object),
