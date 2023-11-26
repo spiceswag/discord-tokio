@@ -767,7 +767,8 @@ pub enum PermissionOverwrite {
 // Channels
 
 /// A private or public channel
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Channel {
     /// Text channel to another user
     DirectMessage(DirectMessage),
@@ -797,10 +798,8 @@ pub struct DirectMessage {
     #[serde(rename = "recipients")]
     pub recipient: [User; 1],
 
-    // ignore the "type" field
     #[serde(rename = "type")]
-    #[serde(skip_serializing)]
-    _type: serde::de::IgnoredAny,
+    _type: Eq<1>,
 }
 
 /// A group channel, potentially including other users, separate from a server.
@@ -832,10 +831,8 @@ pub struct Group {
     /// The members of the group chat.
     pub recipients: Vec<User>,
 
-    // ignore the "type" field
     #[serde(rename = "type")]
-    #[serde(skip_serializing)]
-    _type: ::serde::de::IgnoredAny,
+    _type: Eq<3>,
 }
 
 impl Group {
@@ -869,26 +866,6 @@ impl Group {
     }
 }
 
-/// A category (channel) that contains up to 50 other channels.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelCategory {
-    /// The name of the category
-    pub name: String,
-
-    /// The NSFW rating for the channel
-    #[serde(default)]
-    pub nsfw: bool,
-
-    /// The sorting position this category occupies
-    pub position: i64,
-
-    /// The ID of the server this category is found it
-    #[serde(rename = "guild_id")]
-    pub server_id: Option<ServerId>,
-    /// The ID of the pseudo-channel
-    pub id: ChannelId,
-}
-
 /// A channel that can be found in a server.
 ///
 /// This type is meant to be used primarily when deserializing
@@ -916,6 +893,17 @@ pub enum ServerChannel {
         #[doc(hidden)]
         #[serde(rename = "type")]
         kind: Eq<2>,
+    },
+
+    /// A channel category in a server.
+    Category {
+        /// The category itself.
+        #[serde(flatten)]
+        category: ChannelCategory,
+
+        #[doc(hidden)]
+        #[serde(rename = "type")]
+        kind: Eq<4>,
     },
 
     /// An announcement channel in a server.
@@ -970,6 +958,7 @@ impl ServerChannel {
             Self::Text { channel, .. } => &channel.id,
             Self::Voice { channel, .. } => &channel.id,
             Self::Announcement { channel, .. } => &channel.id,
+            Self::Category { category, .. } => &category.id,
             Self::AnnouncementThread { thread, .. } => &thread.id,
             Self::PublicThread { thread, .. } => &thread.id,
             Self::PrivateThread { thread, .. } => &thread.id,
@@ -982,6 +971,7 @@ impl ServerChannel {
             Self::Text { .. } => ChannelType::Text,
             Self::Voice { .. } => ChannelType::Voice,
             Self::Announcement { .. } => ChannelType::Announcement,
+            Self::Category { .. } => ChannelType::Category,
             Self::AnnouncementThread { .. } => ChannelType::AnnouncementThread,
             Self::PublicThread { .. } => ChannelType::PublicThread,
             Self::PrivateThread { .. } => ChannelType::PrivateThread,
@@ -994,6 +984,7 @@ impl ServerChannel {
             Self::Text { channel, .. } => channel.permission_overwrites.as_ref(),
             Self::Voice { channel, .. } => channel.permission_overwrites.as_ref(),
             Self::Announcement { channel, .. } => channel.permission_overwrites.as_ref(),
+            Self::Category { category, .. } => category.permission_overwrites.as_ref(),
 
             // what now
             Self::AnnouncementThread { thread, .. } => &[],
@@ -1119,6 +1110,30 @@ pub enum VideoQuality {
     Auto = 1,
     /// Full HD, also known as 720p
     Full = 2,
+}
+
+/// A category (channel) that contains up to 50 other channels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelCategory {
+    /// The ID of the pseudo-channel
+    pub id: ChannelId,
+
+    /// The ID of the server this category is found it
+    #[serde(rename = "guild_id")]
+    pub server_id: Option<ServerId>,
+
+    /// The name of the category
+    pub name: String,
+
+    /// Permission overwrites for members or whole roles.
+    pub permission_overwrites: Vec<PermissionOverwrite>,
+
+    /// The NSFW rating for the channel
+    #[serde(default)]
+    pub nsfw: bool,
+
+    /// The sorting position this category occupies
+    pub position: i64,
 }
 
 /// An announcement channel is a text based channel with the ability
