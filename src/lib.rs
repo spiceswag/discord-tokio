@@ -316,43 +316,43 @@ impl Discord {
         server: ServerId,
         name: &str,
         kind: ChannelType,
-    ) -> Result<Channel> {
+    ) -> Result<ServerChannel> {
         let map = json! {{
             "name": name,
             "type": kind as u8,
         }};
 
-        let json = self
+        let channel = self
             .request(&format!("/guilds/{server}/channels"), Method::POST, |req| {
                 req.json(&map)
             })
             .await?
-            .json()
+            .json::<ServerChannel>()
             .await?;
 
-        Channel::decode(json)
+        Ok(channel)
     }
 
     /// Get the list of channels in a server.
-    pub async fn get_server_channels(&self, server: ServerId) -> Result<Vec<PublicChannel>> {
-        let json = self
+    pub async fn get_server_channels(&self, server: ServerId) -> Result<Vec<ServerChannel>> {
+        let channels = self
             .empty_request(&format!("/guilds/{server}/channels"), Method::GET)
             .await?
             .json()
             .await?;
 
-        decode_array(json, PublicChannel::decode)
+        Ok(channels)
     }
 
     /// Get information about a channel.
     pub async fn get_channel(&self, channel: ChannelId) -> Result<Channel> {
-        let json = self
+        let channel = self
             .empty_request(&format!("/channels/{channel}"), Method::GET)
             .await?
             .json()
             .await?;
 
-        Channel::decode(json)
+        Ok(channel)
     }
 
     /// Edit a channel's details. See `EditChannel` for the editable fields.
@@ -365,61 +365,37 @@ impl Discord {
     /// ```
     pub async fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(
         &self,
-        channel: ChannelId,
+        channel_id: ChannelId,
         f: F,
-    ) -> Result<PublicChannel> {
-        // Work around the fact that this supposed PATCH call actually requires all fields
-        let mut map = Object::new();
-        match self.get_channel(channel).await? {
+    ) -> Result<Channel> {
+        let channel = match self.get_channel(channel_id).await? {
             Channel::DirectMessage(_) => return Err(Error::Other("Can not edit private channels")),
-            Channel::Server(channel) => {
-                map.insert("name".into(), channel.name.into());
-                map.insert("position".into(), channel.position.into());
-
-                match channel.kind {
-                    ChannelType::Text => {
-                        map.insert("topic".into(), json!(channel.topic));
-                    }
-                    ChannelType::Voice => {
-                        map.insert("bitrate".into(), json!(channel.bitrate));
-                        map.insert("user_limit".into(), json!(channel.user_limit));
-                    }
-                    _ => {
-                        return Err(Error::Other(stringify!(format!(
-                            "Unreachable channel type: {:?}",
-                            channel.kind
-                        ))))
-                    }
-                }
-            }
-            Channel::Group(group) => {
-                map.insert("name".into(), json!(group.name));
-            }
-            Channel::Category(_) => {}
-            Channel::Announcements => {}
+            channel @ _ => channel,
         };
+
+        let map = serde_json::from_value(serde_json::to_value(channel)?)?;
         let map = EditChannel::apply(f, map);
 
-        let json = self
-            .request(&format!("/channels/{channel}"), Method::PATCH, |req| {
+        let channel = self
+            .request(&format!("/channels/{channel_id}"), Method::PATCH, |req| {
                 req.json(&map)
             })
             .await?
             .json()
             .await?;
 
-        PublicChannel::decode(json)
+        Ok(channel)
     }
 
     /// Delete a channel.
     pub async fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
-        let json = self
+        let channel = self
             .empty_request(&format!("/channels/{channel}"), Method::DELETE)
             .await?
             .json()
             .await?;
 
-        Channel::decode(json)
+        Ok(channel)
     }
 
     /// Indicate typing on a channel for the next 5 seconds.
@@ -779,23 +755,17 @@ impl Discord {
     pub async fn create_permission(
         &self,
         channel: ChannelId,
-        target: PermissionOverwrite,
+        permission: PermissionOverwrite,
     ) -> Result<()> {
-        let (id, kind) = match target.kind {
-            PermissionOverwriteType::Member(id) => (id.0, "member"),
-            PermissionOverwriteType::Role(id) => (id.0, "role"),
+        let id = match permission {
+            PermissionOverwrite::Member { id, .. } => id.0,
+            PermissionOverwrite::Role { id, .. } => id.0,
         };
-        let map = json! {{
-            "id": id,
-            "kind": kind,
-            "allow": target.allow.bits(),
-            "deny": target.deny.bits(),
-        }};
 
         self.request(
             &format!("/channels/{channel}/permissions/{id}"),
             Method::PUT,
-            |req| req.json(&map),
+            |req| req.json(&permission),
         )
         .await?
         .insure_no_content()
@@ -813,7 +783,7 @@ impl Discord {
     ///
     /// // Assuming that a `Discord` instance, channel, and member have already
     /// // been previously defined.
-    /// let target = PermissionOverwriteType::Member(member.user.id);
+    /// let target = member.user.id.0;
     /// let response = discord.delete_permission(channel.id, target).await;
     /// ```
     ///
@@ -824,17 +794,17 @@ impl Discord {
     ///
     /// // Assuming that a `Discord` instance, channel, and role have already
     /// // been previously defined.
-    /// let target = PermissionOverwriteType::Role(role.id);
+    /// let target = role.id.0;
     /// let response = discord.delete_permission(channel.id, target).await;
     /// ```
     pub async fn delete_permission(
         &self,
         channel: ChannelId,
-        permission_type: PermissionOverwriteType,
+        overwrite: PermissionOverwriteId,
     ) -> Result<()> {
-        let id = match permission_type {
-            PermissionOverwriteType::Member(id) => id.0,
-            PermissionOverwriteType::Role(id) => id.0,
+        let id = match overwrite {
+            PermissionOverwriteId::Member(id) => id.0,
+            PermissionOverwriteId::Role(id) => id.0,
         };
 
         self.empty_request(
@@ -880,8 +850,8 @@ impl Discord {
         emoji: ReactionEmoji,
     ) -> Result<()> {
         let emoji = match emoji {
-            ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
-            ReactionEmoji::Unicode(name) => name,
+            ReactionEmoji::Custom { name, id, .. } => format!("{}:{}", name, id.0),
+            ReactionEmoji::Unicode { name } => name,
         };
 
         self.empty_request(
@@ -941,8 +911,8 @@ impl Discord {
         emoji: ReactionEmoji,
     ) -> Result<()> {
         let emoji = match emoji {
-            ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
-            ReactionEmoji::Unicode(name) => name,
+            ReactionEmoji::Custom { name, id, .. } => format!("{}:{}", name, id.0),
+            ReactionEmoji::Unicode { name } => name,
         };
         let endpoint = format!(
             "/channels/{}/messages/{}/reactions/{}/{}",
@@ -974,8 +944,8 @@ impl Discord {
         after: Option<UserId>,
     ) -> Result<Vec<User>> {
         let emoji = match emoji {
-            ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
-            ReactionEmoji::Unicode(name) => name,
+            ReactionEmoji::Custom { name, id, .. } => format!("{}:{}", name, id.0),
+            ReactionEmoji::Unicode { name } => name,
         };
         let mut endpoint = format!(
             "/channels/{}/messages/{}/reactions/{}?limit={}",
@@ -990,29 +960,35 @@ impl Discord {
             let _ = write!(endpoint, "&after={}", amount);
         }
 
-        Ok(self
+        let users = self
             .empty_request(&endpoint, Method::GET)
             .await?
             .json()
-            .await?)
+            .await?;
+
+        Ok(users)
     }
 
     /// Get the list of servers this user knows about.
     pub async fn get_servers(&self) -> Result<Vec<ServerPreview>> {
-        Ok(self
+        let servers = self
             .empty_request("/users/@me/guilds", Method::GET)
             .await?
             .json()
-            .await?)
+            .await?;
+
+        Ok(servers)
     }
 
     /// Gets a specific server.
     pub async fn get_server(&self, server_id: ServerId) -> Result<Server> {
-        Ok(self
+        let server = self
             .empty_request(&format!("/guilds/{server_id}"), Method::GET)
             .await?
             .json()
-            .await?)
+            .await?;
+
+        Ok(server)
     }
 
     /// Gets the list of a specific server's members.
@@ -1202,47 +1178,47 @@ impl Discord {
     pub async fn get_invite(&self, invite: &str) -> Result<Invite> {
         let invite = resolve_invite(invite);
 
-        let response = self
+        let invite = self
             .empty_request(&format!("/invite/{invite}"), Method::GET)
             .await?
             .json()
             .await?;
 
-        Invite::decode(response)
+        Ok(invite)
     }
 
     /// Get the active invites for a server.
-    pub async fn get_server_invites(&self, server: ServerId) -> Result<Vec<RichInvite>> {
-        let response = self
+    pub async fn get_server_invites(&self, server: ServerId) -> Result<Vec<ManagedInvite>> {
+        let invites = self
             .empty_request(&format!("/guilds/{server}/invites"), Method::GET)
             .await?
             .json()
             .await?;
 
-        decode_array(response, RichInvite::decode)
+        Ok(invites)
     }
 
     /// Get the active invites for a channel.
-    pub async fn get_channel_invites(&self, channel: ChannelId) -> Result<Vec<RichInvite>> {
-        let response = self
+    pub async fn get_channel_invites(&self, channel: ChannelId) -> Result<Vec<ManagedInvite>> {
+        let invites = self
             .empty_request(&format!("/channels/{channel}/invites"), Method::GET)
             .await?
             .json()
             .await?;
 
-        decode_array(response, RichInvite::decode)
+        Ok(invites)
     }
 
     /// Accept an invite. See `get_invite` for details.
     pub async fn accept_invite(&self, invite: &str) -> Result<Invite> {
         let invite = resolve_invite(invite);
-        let response = self
+        let invite = self
             .empty_request(&format!("/invite/{invite}"), Method::POST)
             .await?
             .json()
             .await?;
 
-        Invite::decode(response)
+        Ok(invite)
     }
 
     /// Create an invite to a channel.
@@ -1255,7 +1231,7 @@ impl Discord {
         max_age: u64,
         max_uses: u64,
         temporary: bool,
-    ) -> Result<RichInvite> {
+    ) -> Result<ManagedInvite> {
         let map = json! {{
             "validate": null,
             "max_age": max_age,
@@ -1263,7 +1239,7 @@ impl Discord {
             "temporary": temporary,
         }};
 
-        let response = self
+        let invite = self
             .request(
                 &format!("/channels/{channel}/invites"),
                 Method::POST,
@@ -1273,28 +1249,30 @@ impl Discord {
             .json()
             .await?;
 
-        RichInvite::decode(response)
+        Ok(invite)
     }
 
     /// Delete an invite. See `get_invite` for details.
     pub async fn delete_invite(&self, invite: &str) -> Result<Invite> {
         let invite = resolve_invite(invite);
-        let response = self
+        let invite = self
             .empty_request(&format!("/invite/{invite}"), Method::DELETE)
             .await?
             .json()
             .await?;
 
-        Invite::decode(response)
+        Ok(invite)
     }
 
     /// Retrieve a member object for a server given the member's user id.
     pub async fn get_member(&self, server: ServerId, user: UserId) -> Result<Member> {
-        Ok(self
+        let member = self
             .empty_request(&format!("/guilds/{server}/members/{user}"), Method::GET)
             .await?
             .json()
-            .await?)
+            .await?;
+
+        Ok(member)
     }
 
     /// Edit the list of roles assigned to a member of a server.

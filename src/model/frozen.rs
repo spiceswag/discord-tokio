@@ -679,7 +679,7 @@ impl Role {
 
 bitflags! {
     /// Set of permissions assignable to a Role or PermissionOverwrite
-    #[derive(Serialize, Deserialize)]
+    #[derive(Default, Serialize, Deserialize)]
     #[serde(transparent)]
     pub struct Permissions: u64 {
         const CREATE_INVITE = 1;
@@ -741,12 +741,14 @@ pub enum PermissionOverwrite {
         id: RoleId,
 
         /// Permissions to allow for this role.
+        #[serde(default)]
         allow: Permissions,
         /// Permissions to deny for this role.
+        #[serde(default)]
         deny: Permissions,
 
         #[serde(rename = "type")]
-        _type: Eq<0>,
+        kind: Eq<0>,
     },
 
     /// A permission overwrite targeting a specific user.
@@ -755,13 +757,24 @@ pub enum PermissionOverwrite {
         id: UserId,
 
         /// Permissions to allow for this role.
+        #[serde(default)]
         allow: Permissions,
         /// Permissions to deny for this role.
+        #[serde(default)]
         deny: Permissions,
 
         #[serde(rename = "type")]
-        _type: Eq<1>,
+        kind: Eq<1>,
     },
+}
+
+/// The ID of a permission overwrite entity.
+#[derive(Debug, Clone, Serialize)]
+pub enum PermissionOverwriteId {
+    /// The permission overwrite concerns a member.
+    Member(UserId),
+    /// The permission overwrite concerns a role.
+    Role(RoleId),
 }
 
 // Channels
@@ -1660,26 +1673,62 @@ pub struct Invite {
     pub expires_at: Option<DateTime<FixedOffset>>,
 
     /// Server scheduled event data.
-    pub scheduled_event: Option<()>,
+    #[serde(rename = "guild_scheduled_event")]
+    pub scheduled_event: Option<ScheduledEvent>,
 }
 
-/// Detailed information about an invite, available to server managers.
-#[derive(Debug, Clone)]
-pub struct RichInvite {
+/// Detailed information about an invite, available to server managers, hence the name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagedInvite {
+    /// The unique code of the invite.
     pub code: String,
-    pub server_icon: Option<String>,
-    pub server_id: ServerId,
-    pub server_name: String,
-    pub server_splash_hash: Option<String>,
-    pub channel_type: ChannelType,
-    pub channel_id: ChannelId,
-    pub channel_name: String,
-    pub inviter: User,
-    pub created_at: String,
-    pub max_age: u64,
-    pub max_uses: u64,
-    pub temporary: bool,
+
+    /// The server you will be added to.
+    #[serde(rename = "guild")]
+    pub server: Option<InviteServer>,
+
+    /// The channel you're being invited to
+    pub channel: Option<InviteChannel>,
+
+    /// The creator of the invite.
+    pub inviter: Option<User>,
+
+    /// If the invite points to a voice channel,
+    /// this describes if the user should be directed
+    /// into another user's stream or activity.
+    #[serde(rename = "target_type")]
+    pub invite_target: Option<InviteTargetType>,
+    /// The user whose stream or activity will be joined.
+    #[serde(rename = "target_user")]
+    pub join_target: Option<User>,
+
+    /// Approximate count of the members in the server.
+    pub approximate_member_count: Option<u64>,
+    /// Approximate count of the online members in the server.
+    #[serde(rename = "approximate_presence_count")]
+    pub approximate_online_count: Option<u64>,
+
+    /// When the invite expires.
+    pub expires_at: Option<DateTime<FixedOffset>>,
+
+    /// Server scheduled event data.
+    #[serde(rename = "guild_scheduled_event")]
+    pub scheduled_event: Option<ScheduledEvent>,
+
+    // new fields
+    /// How many times the invite has been used.
     pub uses: u64,
+    /// How many times the invite can be used before deleted.
+    pub max_uses: u64,
+
+    /// Whether the invite only grants temporary membership.
+    #[serde(rename = "temporary")]
+    pub temporary_membership: bool,
+
+    /// When the invite was created.
+    pub created_at: DateTime<FixedOffset>,
+    /// When the invite will expire, as an offset in seconds from the creation date.
+    pub max_age: u64,
 }
 
 /// Defines what the joining user will see when

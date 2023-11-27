@@ -645,7 +645,7 @@ impl State {
     pub fn find_channel(&self, id: ChannelId) -> Option<ChannelRef> {
         for server in &self.servers {
             for channel in &server.channels {
-                if channel.id == id {
+                if channel.id() == &id {
                     return Some(ChannelRef::Public(server, channel));
                 }
             }
@@ -712,8 +712,8 @@ pub enum ChannelRef<'a> {
     Private(&'a DirectMessage),
     /// A group channel
     Group(&'a Group),
-    /// A public channel and its server
-    Public(&'a LiveServer, &'a PublicChannel),
+    /// A server channel and its server
+    Server(&'a LiveServer, &'a ServerChannel),
 }
 
 #[inline]
