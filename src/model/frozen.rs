@@ -194,20 +194,30 @@ pub struct Relationship {
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum RelationshipType {
+    /// A user has sent a friend request which was consequently ignored.
     Ignored = 0,
+    /// The two users are friends.
     Friends = 1,
+    /// One user has blocked the other.
     Blocked = 2,
+    /// One user has sent this user a friend request.
     IncomingRequest = 3,
+    /// One user has sent another a friend request.
     OutgoingRequest = 4,
 }
 
 /// Flags for who may add a user as a friend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendSourceFlags {
+    /// Anybody can add this user as a friend.
     #[serde(default)]
     pub all: bool,
+
+    /// Only friends of friends my add this user.
     #[serde(default)]
     pub mutual_friends: bool,
+
+    /// Only people in a server with this user may add them.
     #[serde(default)]
     #[serde(rename = "mutual_guilds")]
     pub mutual_servers: bool,
@@ -655,16 +665,40 @@ impl ServerId {
 /// https://discord.com/developers/docs/topics/permissions#role-object
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
+    /// The ID of the role.
     pub id: RoleId,
+    /// The name of the role.
     pub name: String,
+
     /// Color in `0xRRGGBB` form
     pub color: u64,
+
+    /// Hash of the role icon iaage.
+    pub icon: Option<String>,
+
+    /// The unicode icon of the emoji.
+    pub unicode_emoji: Option<String>,
+
+    /// If this role is pinned in the user listing
     pub hoist: bool,
+
+    /// If this role belongs to a bot user and is managed by their application.
     pub managed: bool,
+
+    /// Position of this role.
     pub position: i64,
+
+    /// Whether this role can be mentioned.
     #[serde(default)] // default to false
     pub mentionable: bool,
+
+    /// The permissions granted by this role.
     pub permissions: Permissions,
+
+    /// Other flags.
+    pub flags: RoleFlags,
+    // nah
+    // pub tags: (),
 }
 
 impl Role {
@@ -672,6 +706,25 @@ impl Role {
     #[inline(always)]
     pub fn mention(&self) -> Mention {
         self.id.mention()
+    }
+
+    /// Returns the formatted URL of the role's icon.
+    ///
+    /// Returns `None` if the role does not have an icon.
+    pub fn icon_url(&self) -> Option<String> {
+        self.icon
+            .as_ref()
+            .map(|icon| format!(cdn_concat!("/role-icons/{}/{}.jpg"), self.id, icon))
+    }
+}
+
+bitflags! {
+    /// Additional role flags.
+    #[derive(Default, Serialize, Deserialize)]
+    #[serde(transparent)]
+    pub struct RoleFlags: u8 {
+        /// The role is selectable in the onboarding prompt.
+        const AVAILABLE_IN_PROMPT = 1;
     }
 }
 
