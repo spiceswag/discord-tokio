@@ -1462,7 +1462,7 @@ fn mention_test() {
 
 // Emoji
 
-/// A server may upload custom emojis
+/// A custom emoji uploaded to a discord server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Emoji {
     pub id: EmojiId,
@@ -1471,6 +1471,17 @@ pub struct Emoji {
     pub require_colons: bool,
     pub animated: bool,
     pub roles: Vec<RoleId>,
+}
+
+impl Emoji {
+    /// The CDN URL that points to the image or GIF that is shown for the emoji.
+    pub fn image_url(&self) -> String {
+        format!(
+            cdn_concat!("/emojis/{}.{}"),
+            self.id,
+            if !self.animated { "png" } else { "gif" }
+        )
+    }
 }
 
 // Stickers
@@ -1995,4 +2006,9 @@ pub enum ScheduledEventStatus {
     Active,
     Completed,
     Canceled,
+}
+
+/// An image serialized as base64.
+pub struct Image {
+    pub data: String,
 }
