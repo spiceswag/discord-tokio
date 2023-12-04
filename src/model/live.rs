@@ -10,45 +10,198 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use tracing::{error, warn};
 
 use super::{
-    ApplicationId, ChannelCategory, ChannelId, ChannelType, Emoji, EmojiId, MessageId,
-    PermissionOverwrite, Permissions, Role, RoleId, Server, ServerChannel, ServerId, StickerItem,
-    Thread, User, UserId, VerificationLevel,
+    ApplicationId, ChannelId, ChannelType, Emoji, EmojiId, EventId, MessageId, NsfwLevel,
+    PermissionOverwrite, Permissions, Role, RoleId, ScheduledEvent, Server, ServerChannel,
+    ServerFeature, ServerId, ServerThread, StageId, Sticker, StickerItem, Thread, User, UserId,
+    VerificationLevel, WelcomeScreen,
 };
 
 // Live Server
 
 /// Live server information is provided and maintained actively by the gateway.
 ///
-/// It is suitable for querying the constantly changing parts of a server,
-/// such as its member, and those members' presences, but also static (`frozen`)
-/// information, such as its owner.
-#[derive(Debug, Clone)]
+/// More accurately, a live server is a [`Server`] structure,  
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveServer {
+    /// The ID of the server.
     pub id: ServerId,
+    /// The name of the server (2-100 characters).
     pub name: String,
-    pub owner_id: UserId,
-    pub application_id: Option<u64>,
-    pub voice_states: Vec<VoiceState>,
-    pub roles: Vec<Role>,
-    pub region: String,
-    pub presences: Vec<Presence>,
-    pub member_count: u64,
-    pub members: Vec<Member>,
-    pub joined_at: String,
+    /// The icon hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
     pub icon: Option<String>,
-    pub large: bool,
-    pub channels: Vec<ServerChannel>,
-    pub categories: Vec<ChannelCategory>,
-    pub afk_timeout: u64,
-    pub afk_channel_id: Option<ChannelId>,
-    pub system_channel_id: Option<ChannelId>,
-    pub verification_level: VerificationLevel,
-    pub emojis: Vec<Emoji>,
-    pub features: Vec<String>,
+
+    /// The banner image (splash) hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
     pub splash: Option<String>,
-    pub default_message_notifications: u64,
-    pub mfa_level: u64,
-    pub explicit_content_filter: u64,
+
+    /// The hash of the banner image (splash) displayed
+    /// in the public server discovery provided by Discord.
+    ///
+    /// Only present for guilds with the "DISCOVERABLE" feature
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
+    pub discovery_splash: Option<String>,
+
+    /// True if the requesting user is the owner of the guild.
+    pub owner: bool,
+    /// The owner of the guild
+    pub owner_id: UserId,
+
+    /// Total permissions for the user in the guild
+    /// (excludes channel and category overwrites and implicit permissions)
+    pub permissions: Permissions,
+
+    /// Voice region id for the guild (deprecated)
+    #[deprecated(note = "this field is replaced by a dedicated field on each voice channel")]
+    pub region: String,
+
+    /// Voice AFK timeout in seconds,
+    /// after which the user will be moved to the AFK channel.
+    pub afk_timeout: u64,
+    /// The ID of the AFK voice channel.
+    pub afk_channel_id: Option<ChannelId>,
+
+    /// True if the server widget is enabled
+    pub widget_enabled: bool,
+    /// The channel ID that the widget will generate an invite to, or `None` if set to no invite.
+    pub widget_channel_id: Option<ChannelId>,
+
+    /// User verification level to be able to use the server
+    pub verification_level: VerificationLevel,
+
+    /// Default message notification level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-default-message-notification-level
+    pub default_message_notifications: u8,
+    /// Explicit content filter level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-explicit-content-filter-level
+    pub explicit_content_filter: u8,
+
+    /// A list of all roles in the server.
+    pub roles: Vec<Role>,
+
+    /// A list of custom emojis in the server.
+    pub emojis: Vec<Emoji>,
+
+    /// Array of server features enabled for this server.
+    pub features: Vec<ServerFeature>,
+
+    /// Required multi factor authentication level.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-mfa-level
+    pub mfa_level: u8,
+
+    // pub application_id: ApplicationId
+    /// The id of the channel where server notices
+    /// such as welcome messages and boost events are posted.
+    pub system_channel_id: Option<ChannelId>,
+    /// System channel flags.
+    ///
+    /// https://discord.com/developers/docs/resources/guild#guild-object-system-channel-flags
+    pub system_channel_flags: u64,
+
+    /// The ID of the channel where Community servers can display rules and/or guidelines.
+    pub rules_channel_id: Option<ChannelId>,
+
+    /// The maximum number of presences for the server
+    /// (null is always returned, apart from the largest of servers)
+    pub max_presences: Option<u64>,
+    /// The maximum number of members for the server
+    pub max_members: Option<u64>,
+
+    /// The vanity url code for the server
+    pub vanity_url_code: Option<String>,
+
+    /// The description of a server
+    pub description: Option<String>,
+    /// The banner image (splash) hash of the server.
+    ///
+    /// https://discord.com/developers/docs/reference#image-formatting
+    pub banner: Option<String>,
+
+    /// Server boost level.
+    #[serde(rename = "premium_tier")]
+    pub boost_tier: u8,
+    /// The number of boosts this server currently has
+    #[serde(rename = "premium_subscription_count")]
+    pub boost_subscription_count: Option<u64>,
+
+    /// The preferred locale of a Community server;
+    /// used in server discovery and notices from Discord,
+    /// and sent in interactions; defaults to "en-US".
+    pub preferred_locale: String,
+
+    /// The id of the channel where admins and moderators
+    /// of Community guilds receive notices from Discord.
+    pub public_updates_channel_id: Option<ChannelId>,
+
+    /// The maximum amount of users in a voice turned video channel.
+    pub max_video_channel_users: u64,
+    /// The maximum amount of users in a stage video channel.
+    pub max_stage_video_channel_users: u64,
+
+    /// Approximate number of members in this guild,
+    /// returned from the `GET` `/guilds/<id>` and `/users/@me/guilds`
+    /// endpoints when `with_counts` is `true`.
+    pub approximate_member_count: u64,
+
+    /// Approximate number of non-offline members in this guild,
+    /// returned from the `GET` `/guilds/<id>` and `/users/@me/guilds`
+    /// endpoints when `with_counts` is `true`.
+    pub approximate_presence_count: u64,
+
+    /// The welcome screen of a Community guild, shown to new members,
+    /// returned in an Invite's server object.
+    pub welcome_screen: WelcomeScreen,
+
+    /// The server's self assigned NSFW rating.
+    #[serde(rename = "nsfw_level")]
+    pub nsfw: NsfwLevel,
+
+    /// Custom server stickers
+    pub stickers: Option<Vec<Sticker>>,
+
+    /// Whether the guild has the boost progress bar enabled.
+    #[serde(rename = "premium_progress_bar_enabled")]
+    pub boost_progress_bar_enabled: bool,
+
+    /// The ID of the channel where admins and moderators
+    /// of Community guilds receive safety alerts from Discord.
+    pub safety_alerts_channel_id: Option<ChannelId>,
+
+    // live server extensions
+    /// When the current user joined this server.
+    pub joined_at: DateTime<FixedOffset>,
+
+    /// If the server is considered large,
+    /// as per the standards set when setting up a connection.
+    pub large: bool,
+
+    /// The total amount of members in a guild.
+    pub member_count: u64,
+
+    /// States of members currently in voice channels; lacks the `server_id` field.
+    pub voice_states: Vec<VoiceState>,
+
+    /// The server's members.
+    pub members: Vec<Member>,
+
+    /// Non-thread channels in a server.
+    pub channels: Vec<ServerChannel>,
+    /// All the threads visible to the user.
+    pub threads: Vec<ServerThread>,
+
+    /// All the active stage instances at the current moment.
+    #[serde(rename = "stage_instances")]
+    pub active_stages: Vec<ActiveStage>,
+
+    /// All scheduled events in the server.
+    #[serde(rename = "guild_scheduled_events")]
+    pub scheduled_events: Vec<ScheduledEvent>,
 }
 
 impl LiveServer {
@@ -875,7 +1028,9 @@ pub struct VoiceState {
 
     /// The voice channel they are connected to.
     pub channel_id: Option<ChannelId>,
-    /// The server this voice state is about
+    /// The server this voice state is about.
+    ///
+    /// This field is missing in [`LiveServer`] instances.
     #[serde(rename = "guild_id")]
     pub server_id: Option<ServerId>,
 
@@ -984,4 +1139,36 @@ pub struct UnreadMessages {
     /// Mentions since that message in this channel
     #[serde(default)]
     pub mention_count: u64,
+}
+
+/// An in session stage channel instance on a server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveStage {
+    /// The ID of the stage/
+    pub id: StageId,
+
+    /// The ID of the server the stage is in.
+    #[serde(rename = "guild_id")]
+    pub server_id: ServerId,
+    /// The ID of the channel the active stage instance.
+    pub channel_id: ChannelId,
+
+    /// The topic set for the stage session.
+    pub topic: String,
+
+    #[serde(rename = "privacy_level")]
+    pub privacy: StagePrivacyLevel,
+
+    /// The ID of an associated scheduled event.
+    #[serde(rename = "guild_scheduled_event_id")]
+    pub event_id: Option<EventId>,
+}
+
+/// Defines if an active stage session is visible and joinable from a server's discovery page.
+#[derive(Debug, Clone, Default, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum StagePrivacyLevel {
+    Public = 1,
+    #[default]
+    ServerOnly,
 }

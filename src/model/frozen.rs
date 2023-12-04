@@ -73,6 +73,8 @@ snowflake! {
     StickerPackId;
     /// An identifier for a scheduled server event
     EventId;
+    /// An identifier for an active stage instance.
+    StageId;
 }
 
 // Users
@@ -385,7 +387,8 @@ pub struct Server {
     pub nsfw: NsfwLevel,
 
     /// Custom server stickers
-    pub stickers: Option<Vec<() /* Sticker */>>,
+    #[serde(default)]
+    pub stickers: Vec<Sticker>,
 
     /// Whether the guild has the boost progress bar enabled.
     #[serde(rename = "premium_progress_bar_enabled")]
@@ -1257,6 +1260,44 @@ pub struct AnnouncementChannel {
     /// Default duration, copied onto newly created threads, in minutes,
     /// threads will stop showing in the channel list after the specified period of inactivity, can be set to: 60, 1440, 4320, 10080.
     pub default_auto_archive_duration: Option<u16>,
+}
+
+/// A thread within a discord server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServerThread {
+    /// A temporary sub-channel within an [AnnouncementChannel].
+    AnnouncementThread {
+        /// The thread in question.
+        #[serde(flatten)]
+        thread: Thread,
+
+        #[doc(hidden)]
+        #[serde(rename = "type")]
+        kind: Eq<10>,
+    },
+
+    /// A temporary sub-channel within a [TextChannel] or GUILD_FORUM channel
+    PublicThread {
+        /// The thread in question.
+        #[serde(flatten)]
+        thread: Thread,
+
+        #[doc(hidden)]
+        #[serde(rename = "type")]
+        kind: Eq<11>,
+    },
+
+    /// A temporary sub-channel within a [TextChannel] channel
+    /// that is only viewable by those invited and those with the `MANAGE_THREADS` permission.
+    PrivateThread {
+        /// The thread in question.
+        #[serde(flatten)]
+        thread: Thread,
+
+        #[doc(hidden)]
+        kind: Eq<12>,
+    },
 }
 
 /// A thread within a channel.
