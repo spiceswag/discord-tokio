@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     builders::{EditProfile, EditUserProfile},
     error::{Error, Result, StatusChecks},
-    model::{CurrentUser, DirectMessage, User, UserId},
+    model::{ApplicationInfo, CurrentUser, DirectMessage, User, UserId},
     Object,
 };
 
@@ -47,6 +47,9 @@ pub trait UserExt {
     ///
     /// This endpoint is only available for users, and does not work for bots.
     async fn edit_note(&self, user: UserId, note: &str) -> Result<()>;
+
+    /// Retrieves information about the current application and its owner.
+    async fn get_application_info(&self) -> Result<ApplicationInfo>;
 }
 
 impl UserExt for Discord {
@@ -158,5 +161,15 @@ impl UserExt for Discord {
         .await?
         .insure_no_content()
         .await
+    }
+
+    async fn get_application_info(&self) -> Result<ApplicationInfo> {
+        let application = self
+            .empty_request("/oath/applications/@me", Method::GET)
+            .await?
+            .json()
+            .await?;
+
+        Ok(application)
     }
 }

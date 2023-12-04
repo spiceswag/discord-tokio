@@ -2009,6 +2009,7 @@ pub enum ScheduledEventStatus {
 }
 
 /// An image serialized as base64.
+#[derive(Debug, Clone)]
 pub struct Image {
-    pub data: String,
+    pub data: Vec<u8>,
 }

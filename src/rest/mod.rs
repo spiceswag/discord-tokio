@@ -38,18 +38,21 @@ const API_BASE: &'static str = "https://discord.com/api/v6";
 /// extension traits as to not import dozens of methods all at once,
 /// instead importing only the necessary ones.
 ///
-/// Here is a brief guide to those extension traits:
-///
-///
+/// Here is a brief guide to those extension traits, in alphabetical order:
+/// - `ChannelExt`: Interact with any sort of channel, in a server or outside of one.
+/// - `LoginExt`: Login into the discord API from a bot or user token, or use the automated login system to generate a token.
+/// - `MessageExt`: Send, edit, pin, and react to messages in channels.
+/// - `ServerExt`: Create, fetch, update and delete servers, their invites and so on.
+/// - `UserExt`: Fetch other users, or update the currently logged in one.
 ///
 /// # Multiple Clients
 ///
 /// Using multiple [`Discord`] clients is not advisable,
 /// as each one of them will be tracking individual detached rate-limiting counters.
 ///
-/// As most operations require only immutable access (`&self`) to the client,
+/// As 99.9% of operations require only immutable access (`&self`) to the client,
 /// courtesy of the rate-limits being held behind a [`Mutex`],
-/// it is advisable to hold the client behind an [`Rc`] or [`Arc`]
+/// it is best to hold the client behind an [`Rc`] or [`Arc`]
 ///
 /// [`Mutex`]: std::sync::Mutex
 /// [`Rc`]: std::rc::Rc

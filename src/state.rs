@@ -27,7 +27,7 @@ impl State {
         let mut unavailable = Vec::new();
         for server in ready.servers {
             match server {
-                PossibleServer::Offline(id) => unavailable.push(id),
+                PossibleServer::Offline { id, .. } => unavailable.push(id),
                 PossibleServer::Online(id) => servers.push(id),
             }
         }
