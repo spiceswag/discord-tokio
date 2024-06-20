@@ -12,11 +12,10 @@ use crate::{
     builders::{EditMember, EditRole, EditServer},
     error::{Result, StatusChecks},
     model::{
-        Ban, ChannelId, ChannelType, Emoji, EmojiId, Image, Invite, ManagedInvite, Member,
-        Permissions, Role, RoleId, Server, ServerChannel, ServerId, ServerPreview, ServerPrune,
-        UserId,
+        trim_invite_code, Ban, ChannelId, ChannelType, Emoji, EmojiId, Image, Invite,
+        ManagedInvite, Member, Permissions, Role, RoleId, Server, ServerChannel, ServerId,
+        ServerPreview, ServerPrune, UserId,
     },
-    resolve_invite,
 };
 
 use super::Discord;
@@ -405,7 +404,7 @@ impl ServerExt for Discord {
     }
 
     async fn get_invite(&self, invite: &str) -> Result<Invite> {
-        let invite = resolve_invite(invite);
+        let invite = trim_invite_code(invite).unwrap_or(invite);
 
         let invite = self
             .empty_request(&format!("/invite/{invite}"), Method::GET)
@@ -437,7 +436,8 @@ impl ServerExt for Discord {
     }
 
     async fn accept_invite(&self, invite: &str) -> Result<Invite> {
-        let invite = resolve_invite(invite);
+        let invite = trim_invite_code(invite).unwrap_or(invite);
+
         let invite = self
             .empty_request(&format!("/invite/{invite}"), Method::POST)
             .await?
@@ -475,7 +475,8 @@ impl ServerExt for Discord {
     }
 
     async fn delete_invite(&self, invite: &str) -> Result<Invite> {
-        let invite = resolve_invite(invite);
+        let invite = trim_invite_code(invite).unwrap_or(invite);
+
         let invite = self
             .empty_request(&format!("/invite/{invite}"), Method::DELETE)
             .await?
