@@ -30,7 +30,7 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
         type Value = u64;
 
         fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-            write!(fmt, "a u64 or parseable string")
+            write!(fmt, "a u64 or parsable string")
         }
 
         fn visit_i64<E: Error>(self, v: i64) -> Result<u64, E> {
@@ -269,7 +269,7 @@ impl<'de, const N: u64> Deserialize<'de> for Eq<N> {
             }
         }
 
-        deserializer.deserialize_any(NumberVisitor)?;
+        deserializer.deserialize_any(NumberVisitor::<N>)?;
         Ok(Self)
     }
 }
