@@ -575,7 +575,7 @@ pub enum ServerFeature {
     MoreStickers,
     /// Server is able to set role icons
     RoleIcons,
-    /// Server has access to set 384Kbps bitrate in voice (previously VIP voice servers)
+    /// Server has access to set 384KBps bitrate in voice (previously VIP voice servers)
     VipRegions,
 
     // server join utilities
@@ -676,7 +676,7 @@ pub struct Role {
     /// Color in `0xRRGGBB` form
     pub color: u64,
 
-    /// Hash of the role icon iaage.
+    /// Hash of the role icon image.
     pub icon: Option<String>,
 
     /// The unicode icon of the emoji.
@@ -914,7 +914,7 @@ impl Group {
                     return Cow::Borrowed("Empty Group");
                 }
 
-                let mut result = self
+                let result = self
                     .recipients
                     .iter()
                     .map(|user| user.name.as_str())
@@ -1922,7 +1922,30 @@ impl InviteServer {
     }
 }
 
-// Server Events
+/// Trim an invite URL, so that the returned string only contains the code itself.
+///
+/// ```
+/// # use discord_tokio::model::rest::trim_invite_code;
+/// # fn main() {
+/// assert_eq!(trim_invite_code("http://discord.gg/gqwtqX3"), Some("gqwtqX3"));
+/// assert_eq!(trim_invite_code("https://discord.gg/gqwtqX3"), Some("gqwtqX3"));
+/// assert_eq!(trim_invite_code("discord.gg/gqwtqX3"), Some("gqwtqX3"));
+/// assert_eq!(trim_invite_code("anything else"), None);
+/// # }
+/// ```
+pub fn trim_invite_code(invite: &str) -> Option<&str> {
+    if invite.starts_with("http://discord.gg/") {
+        Some(&invite[18..])
+    } else if invite.starts_with("https://discord.gg/") {
+        Some(&invite[19..])
+    } else if invite.starts_with("discord.gg/") {
+        Some(&invite[11..])
+    } else {
+        None
+    }
+}
+
+// Guild Events
 
 /// A scheduled event inside a server.
 ///

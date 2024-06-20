@@ -237,17 +237,22 @@ impl LiveServer {
         // Permissions acquired through granted roles
         let mut role_permissions = everyone.permissions;
 
-        let member = match self.members.iter().find(|u| u.user.unwrap().id == user) {
+        let member = match self
+            .members
+            .iter()
+            .find(|u| u.user.as_ref().unwrap().id == user)
+        {
             Some(u) => u,
             None => return everyone.permissions,
         };
+
         for &role in &member.roles {
             if let Some(role) = self.roles.iter().find(|r| r.id == role) {
                 role_permissions |= role.permissions;
             } else {
                 warn!(
                     "perms: {:?} on {:?} has non-existent role {:?}",
-                    member.user.unwrap().id,
+                    member.user.as_ref().unwrap().id,
                     self.id,
                     role
                 );
@@ -423,7 +428,7 @@ bitflags! {
 // Presence
 
 /// A members's online status
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Presence {
     /// The user this ID belongs to
     pub user_id: UserId,
@@ -437,7 +442,8 @@ pub struct Presence {
     pub activities: Vec<Activity>,
 }
 
-/// A user's online presence status
+/// A user's online presence status.
+/// This enum is deserialized from a string field.
 ///
 /// https://discord.com/developers/docs/topics/gateway-events#update-presence-status-types
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Serialize, Deserialize)]

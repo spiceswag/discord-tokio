@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, FixedOffset, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Object;
+use crate::serial::Eq;
 
 use super::{
     Attachment, Call, Channel, ChannelId, CurrentUser, CurrentUserPatch, Emoji, FriendSourceFlags,
@@ -14,8 +15,12 @@ use super::{
     User, UserId, UserServerSettings, UserSettings, VoiceState,
 };
 
-/// Event received over a websocket connection
-#[derive(Debug, Clone)]
+/// Event received over a websocket connection.
+///
+/// When deserialized as part of a `struct` use `#[serde(flatten)]`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(tag = "t", content = "d")]
 pub enum Event {
     /// The first event in a connection, containing the initial state.
     ///
@@ -23,6 +28,8 @@ pub enum Event {
     Ready(ReadyEvent),
     /// The connection has successfully resumed after a disconnect.
     Resumed {
+        /// The trace of discord gateway servers involved in serving this connection.
+        #[serde(rename = "_trace")]
         trace: Vec<Option<String>>,
     },
 
@@ -173,49 +180,126 @@ pub enum Event {
     ReactionRemove(SingleReaction),
 
     /// An event type not covered by the above
-    Unknown(String, Object),
-    // Any other event. Should never be used directly.
-    #[doc(hidden)]
-    __NonExhaustive,
+    #[serde(other)]
+    Unknown,
 }
 
 /// The "Ready" event, containing initial state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadyEvent {
+    /// Active gateway version
+    #[serde(rename = "v")]
     pub version: u64,
+
+    /// Logged in user.
     pub user: CurrentUser,
+
+    /// The ID of the current session, used for reconnecting.
     pub session_id: String,
-    pub user_settings: Option<UserSettings>,
-    pub unread_messages: Option<Vec<UnreadMessages>>,
-    pub private_channels: Vec<Channel>,
-    pub presences: Vec<Presence>,
-    pub relationships: Vec<Relationship>,
+
+    /// A list of servers the user is in.
+    /// Servers will be eventually populated with discrete server create events.
+    #[serde(rename = "guilds")]
     pub servers: Vec<PossibleServer<LiveServer>>,
+
+    // Non-bot users
+    /// For non-bot users, a list of messages that have not been acknowledged.
+    #[serde(rename = "read_state")]
+    pub unread_messages: Option<Vec<UnreadMessages>>,
+
+    /// A list of users who have been blocked, or added as friends of the user.
+    pub relationships: Option<Vec<Relationship>>,
+
+    /// The account settings of the current non-bot user.
+    pub user_settings: Option<UserSettings>,
+    /// For non-bot users, user settings which influence per-server notification behavior.
     pub user_server_settings: Option<Vec<UserServerSettings>>,
+
+    /// For user accounts, largely undocumented tutorial stuff.
     pub tutorial: Option<Tutorial>,
-    /// The trace of servers involved in this connection.
-    pub trace: Vec<Option<String>>,
+
+    /// For a non-bot user, a map of notes set for other users.
     pub notes: Option<BTreeMap<UserId, Option<String>>>,
-    /// The shard info for this session; the shard id used and the total number
-    /// of shards.
-    pub shard: Option<[u8; 2]>,
+
+    // Bot Users
+    /// For bot users, the shard info for this session;
+    /// the shard ID used and the total number of shards.
+    pub shard: Option<(u8, u8)>,
+
+    /// The trace of discord gateway servers involved in serving this connection.
+    #[serde(rename = "_trace")]
+    pub trace: Vec<Option<String>>,
 }
 
-/// A raw gateway event,
-/// containing the possibility for control messages.
-#[doc(hidden)]
-#[derive(Debug, Clone)]
-pub enum RawGatewayEvent {
-    Dispatch(u64, Event),
-    Heartbeat(u64),
-    Reconnect,
-    InvalidateSession,
-    Hello(u64),
-    HeartbeatAck,
+/// An event received over the gateway, of any purpose.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum ReceivedMessage {
+    /// An event was sent by the gateway.
+    Dispatch {
+        /// The received dispatch.
+        #[serde(flatten)]
+        dispatch: DispatchPayload,
+
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<0>,
+    },
+
+    /// The gateway asks the bot to reconnect to the gateway.
+    Reconnect {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<7>,
+    },
+
+    /// The current gateway session is invalid.
+    InvalidSession {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<9>,
+    },
+
+    /// The first message sent to the client.
+    Hello {
+        #[serde(rename = "d")]
+        payload: HelloPayload,
+
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<10>,
+    },
+
+    /// Sent in response to receiving a heartbeat to acknowledge that it has been received.
+    HeartbeatAck {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<11>,
+    },
 }
 
-//=================
-// Voice event model
+/// The data (`d`) field of a discord gateway `Hello` event.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HelloPayload {
+    /// Interval (in milliseconds) an app should heartbeat with.
+    pub heartbeat_interval: u64,
+}
+
+/// A dispatch event (opcode 0) received from the discord gateway.
+/// This structure is to be used in conjunction with `#[serde(flatten)]`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DispatchPayload {
+    /// The event that occurred.
+    #[serde(flatten)]
+    pub event: Event,
+
+    /// The sequence number of the event.
+    #[serde(rename = "s")]
+    pub sequence: u64,
+}
+
+// Voice
+
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub enum VoiceEvent {
@@ -235,6 +319,7 @@ pub enum VoiceEvent {
         mode: String,
         secret_key: Vec<u8>,
     },
+
     SpeakingUpdate {
         user_id: UserId,
         ssrc: u32,
