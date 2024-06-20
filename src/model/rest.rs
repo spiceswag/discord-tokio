@@ -11,7 +11,7 @@
 use std::{borrow::Cow, fmt};
 
 use bitflags::bitflags;
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -19,6 +19,17 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use crate::serial::Eq;
 
 // IDs
+
+/// The unix millisecond timestamp of the discord epoch.
+/// The discord epoch is the base of time measurements for the timestamps stored in snowflake IDs.
+const DISCORD_EPOCH: u64 = 1420070400000;
+
+/// Take in a snowflake, extract the timestamp, and add the discord epoch timestamp to it.
+/// This method yields the snowflake's creation date in unix millis.
+const fn to_unix_millis(snowflake: u64) -> u64 {
+    let relative_timestamp = snowflake >> 22;
+    relative_timestamp + DISCORD_EPOCH
+}
 
 macro_rules! snowflake {
     ($(#[$attr:meta] $name:ident;)*) => {
@@ -38,8 +49,9 @@ macro_rules! snowflake {
                 /// Discord generates identifiers using a scheme based on [Twitter Snowflake]
                 /// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
                 pub fn creation_date(&self) -> DateTime<Utc> {
-                    let naive = NaiveDateTime::from_timestamp((1420070400 + (self.0 >> 22) / 1000) as i64, 0);
-                    DateTime::from_utc(naive, Utc)
+                    let unix_timestamp = to_unix_millis(self.0);
+                    let naive = NaiveDateTime::from_timestamp_opt((unix_timestamp / 1000) as i64, 0).expect("invalid and/or out of range timestamp");
+                    Utc.from_utc_datetime(&naive)
                 }
             }
 

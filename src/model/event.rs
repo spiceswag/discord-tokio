@@ -9,11 +9,281 @@ use serde_json::Value;
 use crate::serial::Eq;
 
 use super::{
-    Attachment, Call, Channel, ChannelId, CurrentUser, CurrentUserPatch, Emoji, FriendSourceFlags,
-    LiveServer, Member, Message, MessageId, MessageType, PossibleServer, Presence, Relationship,
-    RelationshipType, Role, RoleId, Server, ServerId, SingleReaction, Tutorial, UnreadMessages,
-    User, UserId, UserServerSettings, UserSettings, VoiceState,
+    Activity, Attachment, Call, Channel, ChannelId, CurrentUser, CurrentUserPatch, Emoji,
+    FriendSourceFlags, LiveServer, Member, Message, MessageId, MessageType, OnlineStatus,
+    PossibleServer, Presence, Relationship, RelationshipType, Role, RoleId, Server, ServerId,
+    SingleReaction, Tutorial, UnreadMessages, User, UserId, UserServerSettings, UserSettings,
+    VoiceState,
 };
+
+/// A JSON payload message sent to the gateway.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum SentMessage {
+    /// Used to trigger the initial handshake with the gateway.
+    Identify {
+        /// The opcode behind this event type.
+        #[doc(hidden)]
+        op: Eq<2>,
+
+        /// The payload sent with this message.
+        #[serde(rename = "d")]
+        payload: IdentifyPayload,
+    },
+
+    /// Used to replay missed events when a disconnected client resumes.
+    Resume {
+        /// The opcode behind this event type.
+        #[doc(hidden)]
+        op: Eq<6>,
+
+        /// The payload sent with this message.
+        #[serde(rename = "d")]
+        payload: ResumePayload,
+    },
+
+    /// Used to maintain an active gateway connection.
+    ///
+    /// Must be sent every `heartbeat_interval` milliseconds after the Opcode 10 Hello payload is received.
+    /// The inner d key is the last sequence number (the field labeled `s`) received by the client. If you have not yet received one, send `None`.
+    Heartbeat {
+        /// The opcode behind this event type.
+        #[doc(hidden)]
+        op: Eq<1>,
+
+        /// The last event sequence number received by the client (the field labeled `s` on dispatch messages).
+        /// If one has not yet been received, send `None`.
+        #[serde(rename = "d")]
+        last_sequence: Option<u64>,
+    },
+
+    /// Used to request all members for a guild or a list of guilds.
+    /// If a client wishes to receive all members, they need to explicitly request them via this operation.
+    ///
+    /// The server will send Guild Members Chunk events in response with up to
+    /// 1000 members per chunk until all members that match the request have been sent.
+    ///
+    /// Discord restricts returned members through intents:
+    /// - `GUILD_PRESENCES` intent is required to set `presences: true`. Otherwise, it will always be false.
+    /// - `GUILD_MEMBERS` intent is required to request the entire member list —- `(query=‘’, limit=0<=n)`
+    /// - You will be limited to requesting 1 `guild_id` per request (this seems to only apply to bots).
+    /// - Requesting a prefix (query parameter) will return a maximum of 100 members.
+    /// - Requesting `user_ids` will continue to be limited to returning 100 members
+    ///
+    /// # Ready event
+    ///
+    /// When initially connecting, if you don't have the `GUILD_PRESENCES` Gateway Intent, or if the guild is over 75k members,
+    /// it will only send members who are in voice, plus the member for you (the connecting user).
+    ///
+    /// Otherwise, if a guild has over large_threshold members (value in the Gateway `Identify`), it will only send members who are online,
+    /// have a role, have a nickname, or are in a voice channel, and if it has under large_threshold members, it will send all members.  
+    RequestGuildMembers {
+        /// The opcode behind this event type.
+        #[doc(hidden)]
+        op: Eq<8>,
+
+        /// The request parameters.
+        #[serde(rename = "d")]
+        payload: RequestGuildMembersPayload,
+    },
+
+    /// Sent when a client wants to join, move, or disconnect from a voice channel.
+    UpdateVoiceState {
+        /// The opcode behind this event type.
+        #[doc(hidden)]
+        op: Eq<4>,
+
+        /// The update payload.
+        #[serde(rename = "d")]
+        payload: UpdateVoiceStatePayload,
+    },
+
+    /// Sent by the client to indicate a presence or status update.
+    UpdatePresence {
+        /// The opcode behind this event type.
+        #[doc(hidden)]
+        op: Eq<3>,
+
+        /// The update payload.
+        #[serde(rename = "d")]
+        payload: UpdatePresencePayload,
+    },
+}
+
+/// The payload sent along with the `Identify` message (opcode 2).
+#[derive(Debug, Clone, Serialize)]
+pub struct IdentifyPayload {
+    /// Authentication token.
+    pub token: String,
+    /// A tuple of the two values `(shard_id, num_shards)`, used for guild sharding.
+    pub shard: Option<(u8, u8)>,
+    /// Gateway Intents you wish to receive.
+    pub intents: (),
+
+    /// Whether this connection supports compression of packets
+    pub compress: Option<bool>,
+    /// Value between 50 and 250, total number of members where the gateway will stop sending offline members in the guild member list.
+    pub large_threshold: Option<u64>,
+
+    /// System fingerprinting information for discord analytics.
+    #[serde(rename = "properties")]
+    pub fingerprint: IdentifyConnection,
+}
+
+/// A connection fingerprint of sorts, including information about the bot's environment.
+///
+/// This is useful for discord to collect, because bots don't include normal user agent strings.
+/// Oddly enough, this is still collected for regular users.
+#[derive(Debug, Clone, Serialize)]
+pub struct IdentifyConnection {
+    /// The current operating system.
+    pub os: String,
+
+    /// For bot users, this is set as the current library.
+    /// For non-bot users, this is a description of the current client program.
+    pub browser: String,
+
+    /// For bot users, this is set as the current library.
+    /// For non-bot users, this is a description of the current device.
+    pub device: String,
+}
+
+/// The payload sent along with the `Resume` message (opcode 6).
+#[derive(Debug, Clone, Serialize)]
+pub struct ResumePayload {
+    /// The token of the authenticating user.
+    token: String,
+
+    /// The session ID sent by the gateway during the failed connection.
+    session_id: String,
+
+    /// The number of the last sequence number received
+    #[serde(rename = "seq")]
+    last_sequence: u64,
+}
+
+/// The request payload sent along with the `RequestGuildMembers` message (opcode 8).
+#[derive(Debug, Clone, Serialize)]
+pub struct RequestGuildMembersPayload {
+    /// ID of the server to get members for.
+    #[serde(rename = "guild_id")]
+    pub server_id: ServerId,
+
+    /// String that username starts with, or an empty string to return all members.
+    /// This field is mandatory, except when the `user_ids` field is set.
+    #[serde(rename = "query")]
+    pub username_query: Option<String>,
+
+    /// Maximum number of members to send matching the query; a limit of 0
+    /// can be used with an empty string query to return all members.
+    pub limit: u32,
+
+    /// Used to specify if we want the presences of the matched members.
+    pub presences: bool,
+
+    /// Used to specify which users you wish to fetch.
+    /// This field may be specified instead of `username_query`.
+    pub user_ids: Option<Vec<UserId>>,
+
+    /// A nonce value to identify the Guild Members Chunk response.
+    pub nonce: String,
+}
+
+/// The request payload sent along with the `UpdateVoiceState` message (opcode 4).
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateVoiceStatePayload {
+    /// ID of the guild to change the state of.
+    pub guild_id: ServerId,
+    /// ID of the voice channel the client wants to join (`None` if disconnecting).
+    pub channel_id: Option<ChannelId>,
+
+    /// Whether the client is muted.
+    pub self_mute: bool,
+    /// Whether the client is deafened.
+    pub self_deaf: bool,
+}
+
+/// The new user presence that will be attached to the gateway's user.
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdatePresencePayload {
+    /// The user's activities
+    pub activities: Vec<Activity>,
+    /// The user's new status
+    pub status: OnlineStatus,
+
+    /// Unix time (in milliseconds) of when the client went idle, or `None` if the client is not idle.
+    pub since: Option<u64>,
+
+    /// Whether or not the client is away from keyboard.
+    pub afk: bool,
+}
+
+/// A JSON payload message received over the gateway, of any purpose, not just event dispatching.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum ReceivedMessage {
+    /// An event was sent by the gateway.
+    Dispatch {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<0>,
+
+        /// The received dispatch.
+        #[serde(flatten)]
+        dispatch: DispatchPayload,
+    },
+
+    /// The gateway asks the bot to reconnect to the gateway.
+    Reconnect {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<7>,
+    },
+
+    /// The current gateway session is invalid.
+    InvalidSession {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<9>,
+    },
+
+    /// The first message sent to the client.
+    Hello {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<10>,
+
+        #[serde(rename = "d")]
+        payload: HelloPayload,
+    },
+
+    /// Sent in response to receiving a heartbeat to acknowledge that it has been received.
+    HeartbeatAck {
+        /// The parsed opcode from the event.
+        #[doc(hidden)]
+        op: Eq<11>,
+    },
+}
+
+/// The data (`d`) field of a discord gateway `Hello` event.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HelloPayload {
+    /// Interval (in milliseconds) an app should heartbeat with.
+    pub heartbeat_interval: u64,
+}
+
+/// A dispatch event (opcode 0) received from the discord gateway.
+/// This structure is to be used in conjunction with `#[serde(flatten)]`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DispatchPayload {
+    /// The event that occurred.
+    #[serde(flatten)]
+    pub event: Event,
+
+    /// The sequence number of the event.
+    #[serde(rename = "s")]
+    pub sequence: u64,
+}
 
 /// Event received over a websocket connection.
 ///
@@ -94,7 +364,7 @@ pub enum Event {
         server_id: Option<ServerId>,
         roles: Option<Vec<RoleId>>,
     },
-    /// The precense list of the user's friends should be replaced entirely
+    /// The presence list of the user's friends should be replaced entirely
     PresencesReplace(Vec<Presence>),
     RelationshipAdd(Relationship),
     RelationshipRemove(UserId, RelationshipType),
@@ -228,74 +498,7 @@ pub struct ReadyEvent {
 
     /// The trace of discord gateway servers involved in serving this connection.
     #[serde(rename = "_trace")]
-    pub trace: Vec<Option<String>>,
-}
-
-/// An event received over the gateway, of any purpose.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum ReceivedMessage {
-    /// An event was sent by the gateway.
-    Dispatch {
-        /// The received dispatch.
-        #[serde(flatten)]
-        dispatch: DispatchPayload,
-
-        /// The parsed opcode from the event.
-        #[doc(hidden)]
-        op: Eq<0>,
-    },
-
-    /// The gateway asks the bot to reconnect to the gateway.
-    Reconnect {
-        /// The parsed opcode from the event.
-        #[doc(hidden)]
-        op: Eq<7>,
-    },
-
-    /// The current gateway session is invalid.
-    InvalidSession {
-        /// The parsed opcode from the event.
-        #[doc(hidden)]
-        op: Eq<9>,
-    },
-
-    /// The first message sent to the client.
-    Hello {
-        #[serde(rename = "d")]
-        payload: HelloPayload,
-
-        /// The parsed opcode from the event.
-        #[doc(hidden)]
-        op: Eq<10>,
-    },
-
-    /// Sent in response to receiving a heartbeat to acknowledge that it has been received.
-    HeartbeatAck {
-        /// The parsed opcode from the event.
-        #[doc(hidden)]
-        op: Eq<11>,
-    },
-}
-
-/// The data (`d`) field of a discord gateway `Hello` event.
-#[derive(Debug, Clone, Deserialize)]
-pub struct HelloPayload {
-    /// Interval (in milliseconds) an app should heartbeat with.
-    pub heartbeat_interval: u64,
-}
-
-/// A dispatch event (opcode 0) received from the discord gateway.
-/// This structure is to be used in conjunction with `#[serde(flatten)]`
-#[derive(Debug, Clone, Deserialize)]
-pub struct DispatchPayload {
-    /// The event that occurred.
-    #[serde(flatten)]
-    pub event: Event,
-
-    /// The sequence number of the event.
-    #[serde(rename = "s")]
-    pub sequence: u64,
+    pub trace: Option<Vec<String>>,
 }
 
 // Voice

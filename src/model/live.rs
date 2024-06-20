@@ -878,7 +878,7 @@ pub struct Embed {
     /// Other fields in the embed.
     #[serde(default)]
     pub fields: Vec<EmbedField>,
-    // dont bother doing the type of the embed
+    // don't bother doing the type of the embed
 }
 
 /// The stuff found at the bottom of the embed.
@@ -886,9 +886,9 @@ pub struct Embed {
 pub struct EmbedFooter {
     /// Footer text.
     pub text: String,
-    /// URL of footer icon (only supports http(s) and attachments).
+    /// URL of the footer icon (only supports http(s) and attachments).
     pub icon_url: Option<String>,
-    /// A proxied URL of the footer icon.
+    /// URL of the footer icon, only this time its behind a proxy.
     pub proxy_icon_url: Option<String>,
 }
 
@@ -897,7 +897,7 @@ pub struct EmbedFooter {
 pub struct EmbedImage {
     /// Source URL of image (only supports http(s) and attachments)
     pub url: String,
-    /// A proxied URL of the image.
+    /// URL of the image, only this time its behind a proxy.
     pub proxy_url: Option<String>,
     /// The height of the image in pixels.
     pub height: u32,
@@ -910,7 +910,7 @@ pub struct EmbedImage {
 pub struct EmbedThumbnail {
     /// Source URL of the thumbnail image (only supports http(s) and attachments)
     pub url: String,
-    /// A proxied URL of the image.
+    /// URL of the image, only this time its behind a proxy.
     pub proxy_url: Option<String>,
     /// The height of the image in pixels.
     pub height: u32,
@@ -923,7 +923,7 @@ pub struct EmbedThumbnail {
 pub struct EmbedVideo {
     /// Source URL of video.
     pub url: String,
-    /// A proxied URL of the video.
+    /// URL of the video, only this time its behind a proxy.
     pub proxy_url: Option<String>,
     /// The height of the video in pixels.
     pub height: u32,
@@ -949,7 +949,7 @@ pub struct EmbedAuthor {
     pub url: Option<String>,
     /// URL of author icon (only supports http(s) and attachments)
     pub icon_url: Option<String>,
-    /// A proxied url of author icon
+    /// URL of author icon, only this time its behind a proxy.
     pub proxy_icon_url: Option<String>,
 }
 
@@ -1141,7 +1141,7 @@ pub struct VoiceRegion {
     /// Whether this is a deprecated voice region (avoid switching to these).
     pub deprecated: bool,
 
-    /// If this voice region supports 386Kbps audio.
+    /// If this voice region supports 386KBps audio.
     ///
     /// This field is not documented in the discord developer documentation.
     /// The assumed meaning of this field has not been yet confirmed by the library authors.
