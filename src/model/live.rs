@@ -7,7 +7,7 @@ use bitflags::bitflags;
 use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use tracing::{error, warn};
+use tracing::warn;
 
 use super::{
     ApplicationId, ChannelId, ChannelType, Emoji, EmojiId, EventId, MessageId, NsfwLevel,
@@ -226,7 +226,7 @@ impl LiveServer {
         let everyone = match self.roles.iter().find(|r| r.id == self.id.everyone()) {
             Some(r) => r,
             None => {
-                error!(
+                warn!(
                     "Missing @everyone role in permissions lookup on {} ({})",
                     self.name, self.id
                 );
@@ -264,34 +264,87 @@ impl LiveServer {
             return Permissions::all();
         }
 
-        let mut text_channel = false;
+        let mut strip_voice_perms = false;
         if let Some(channel) = self.channels.iter().find(|c| c.id() == &channel) {
-            text_channel = channel.kind() == ChannelType::Text;
-            // Apply role overwrites, denied then allowed
-            for overwrite in channel.permission_overwrites() {
-                if let PermissionOverwrite::Role {
-                    id, allow, deny, ..
-                } = overwrite
-                {
-                    // if the member has this role, or it is the @everyone role
-                    if member.roles.contains(id) || id.0 == self.id.0 {
-                        role_permissions = (role_permissions & !*deny) | *allow;
+            strip_voice_perms = channel.contains_text();
+
+            match channel {
+                ServerChannel::Text { .. }
+                | ServerChannel::Voice { .. }
+                | ServerChannel::Announcement { .. }
+                | ServerChannel::Category { .. } => {
+                    let overwrites = channel.permission_overwrites().unwrap();
+
+                    // Apply role overwrites, denied then allowed
+                    for overwrite in overwrites {
+                        if let PermissionOverwrite::Role {
+                            id, allow, deny, ..
+                        } = overwrite
+                        {
+                            // if the member has this role, or it is the @everyone role
+                            if member.roles.contains(id) || id.0 == self.id.0 {
+                                role_permissions = (role_permissions & !*deny) | *allow;
+                            }
+                        }
+                    }
+
+                    // Apply member overwrites, denied then allowed
+                    for overwrite in overwrites {
+                        if let PermissionOverwrite::Member {
+                            id, allow, deny, ..
+                        } = overwrite
+                        {
+                            if &user == id {
+                                role_permissions = (role_permissions & !*deny) | *allow;
+                            }
+                        }
                     }
                 }
-            }
-            // Apply member overwrites, denied then allowed
-            for overwrite in channel.permission_overwrites() {
-                if let PermissionOverwrite::Member {
-                    id, allow, deny, ..
-                } = overwrite
-                {
-                    if &user == id {
-                        role_permissions = (role_permissions & !*deny) | *allow;
+
+                // channel is a thread and inherits overwrites from its parent
+                ServerChannel::PublicThread { thread, .. }
+                | ServerChannel::PrivateThread { thread, .. }
+                | ServerChannel::AnnouncementThread { thread, .. } => {
+                    let parent_channel = self.channels.iter().find(|c| c.id() == &thread.parent_id);
+                    if let Some(parent_channel) = parent_channel {
+                        let overwrites = parent_channel.permission_overwrites().unwrap();
+
+                        // Apply role overwrites, denied then allowed
+                        for overwrite in overwrites {
+                            if let PermissionOverwrite::Role {
+                                id, allow, deny, ..
+                            } = overwrite
+                            {
+                                // if the member has this role, or it is the @everyone role
+                                if member.roles.contains(id) || id.0 == self.id.0 {
+                                    role_permissions = (role_permissions & !*deny) | *allow;
+                                }
+                            }
+                        }
+
+                        // Apply member overwrites, denied then allowed
+                        for overwrite in overwrites {
+                            if let PermissionOverwrite::Member {
+                                id, allow, deny, ..
+                            } = overwrite
+                            {
+                                if &user == id {
+                                    role_permissions = (role_permissions & !*deny) | *allow;
+                                }
+                            }
+                        }
+                    } else {
+                        warn!(
+                            "guild with id {:?} does not contain channel {:?}, but it is referenced as thread {:?}'s parent", 
+                            self.id, 
+                            thread.parent_id, 
+                            thread.id
+                        );
                     }
                 }
             }
         } else {
-            warn!("perms: {:?} does not contain {:?}", self.id, channel);
+            warn!("guild with id {:?} does not contain channel ID {:?}, but it is referenced in role overwrites", self.id, channel);
         }
 
         // Default channel is always readable
@@ -320,7 +373,7 @@ impl LiveServer {
         }
 
         // Text channel => no voice actions
-        if text_channel {
+        if strip_voice_perms {
             role_permissions &= !(Permissions::VOICE_CONNECT
                 | Permissions::VOICE_SPEAK
                 | Permissions::VOICE_MUTE_MEMBERS

@@ -25,8 +25,7 @@
 //!
 //! For examples, see the `examples` directory in the source tree.
 
-#![warn(missing_docs)]
-#![allow(deprecated)]
+#![warn(missing_docs, missing_debug_implementations)]
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -50,8 +49,8 @@ pub mod model {
     mod event;
     pub use self::event::*;
 
-    mod frozen;
-    pub use frozen::*;
+    mod rest;
+    pub use rest::*;
 
     mod live;
     pub use live::*;

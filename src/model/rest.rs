@@ -734,43 +734,63 @@ bitflags! {
 // Permissions
 
 bitflags! {
-    /// Set of permissions assignable to a Role or PermissionOverwrite
+    /// Set of permissions assignable to a [Role] or a [PermissionOverwrite]
     #[derive(Default, Serialize, Deserialize)]
-    #[serde(transparent)]
     pub struct Permissions: u64 {
+        /// Freely create invites to all channels of this server
         const CREATE_INVITE = 1;
+
+        /// Kick individual members from the server.
         const KICK_MEMBERS = 1 << 1;
+        /// Permanently ban members and non-members from the server.
         const BAN_MEMBERS = 1 << 2;
+
         /// Grant all permissions, bypassing channel-specific permissions
         const ADMINISTRATOR = 1 << 3;
-        /// Modify roles below their own
-        const MANAGE_ROLES = 1 << 28;
+
         /// Create channels or edit existing ones
         const MANAGE_CHANNELS = 1 << 4;
         /// Change the server's name or move regions
         const MANAGE_SERVER = 1 << 5;
+
         /// Change their own nickname
         const CHANGE_NICKNAMES = 1 << 26;
+
         /// Change the nickname of other users
         const MANAGE_NICKNAMES = 1 << 27;
-        /// Manage the emojis in a a server.
-        const MANAGE_EMOJIS = 1 << 30;
+        /// Modify roles below their own
+        const MANAGE_ROLES = 1 << 28;
         /// Manage channel webhooks
         const MANAGE_WEBHOOKS = 1 << 29;
+        /// Manage the emojis in a a server.
+        const MANAGE_EMOJIS = 1 << 30;
 
+        /// Read messages in a given text channel.
         const READ_MESSAGES = 1 << 10;
+
+        /// Send messages in a given text channel.
         const SEND_MESSAGES = 1 << 11;
+
         /// Send text-to-speech messages to those focused on the channel
         const SEND_TTS_MESSAGES = 1 << 12;
-        /// Delete messages by other users
+
+        /// Delete messages by other users.
         const MANAGE_MESSAGES = 1 << 13;
+
+        /// Automatically add embeds for the links in the message body.
         const EMBED_LINKS = 1 << 14;
+
+        /// Allow adding of file attachments to messages.
         const ATTACH_FILES = 1 << 15;
+
         const READ_HISTORY = 1 << 16;
+
         /// Trigger a push notification for an entire channel with "@everyone"
         const MENTION_EVERYONE = 1 << 17;
+
         /// Use emojis from other servers
         const EXTERNAL_EMOJIS = 1 << 18;
+
         /// Add emoji reactions to messages
         const ADD_REACTIONS = 1 << 6;
 
@@ -804,7 +824,7 @@ pub enum PermissionOverwrite {
         deny: Permissions,
 
         #[serde(rename = "type")]
-        kind: Eq<0>,
+        _type: Eq<0>,
     },
 
     /// A permission overwrite targeting a specific user.
@@ -820,7 +840,7 @@ pub enum PermissionOverwrite {
         deny: Permissions,
 
         #[serde(rename = "type")]
-        kind: Eq<1>,
+        _type: Eq<1>,
     },
 }
 
@@ -868,7 +888,7 @@ pub struct DirectMessage {
     pub recipient: [User; 1],
 
     #[serde(rename = "type")]
-    _type: Eq<1>,
+    pub _type: Eq<1>,
 }
 
 /// A group channel, potentially including other users, separate from a server.
@@ -901,7 +921,7 @@ pub struct Group {
     pub recipients: Vec<User>,
 
     #[serde(rename = "type")]
-    _type: Eq<3>,
+    pub _type: Eq<3>,
 }
 
 impl Group {
@@ -950,7 +970,7 @@ pub enum ServerChannel {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<0>,
+        _type: Eq<0>,
     },
 
     /// A voice channel in a server.
@@ -961,7 +981,7 @@ pub enum ServerChannel {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<2>,
+        _type: Eq<2>,
     },
 
     /// A channel category in a server.
@@ -972,7 +992,7 @@ pub enum ServerChannel {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<4>,
+        _type: Eq<4>,
     },
 
     /// An announcement channel in a server.
@@ -983,7 +1003,7 @@ pub enum ServerChannel {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<5>,
+        _type: Eq<5>,
     },
 
     /// A temporary sub-channel within an [AnnouncementChannel].
@@ -994,7 +1014,7 @@ pub enum ServerChannel {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<10>,
+        _type: Eq<10>,
     },
 
     /// A temporary sub-channel within a [TextChannel] or GUILD_FORUM channel
@@ -1005,7 +1025,7 @@ pub enum ServerChannel {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<11>,
+        _type: Eq<11>,
     },
 
     /// A temporary sub-channel within a [TextChannel] channel
@@ -1016,7 +1036,7 @@ pub enum ServerChannel {
         thread: Thread,
 
         #[doc(hidden)]
-        kind: Eq<12>,
+        _type: Eq<12>,
     },
 }
 
@@ -1047,18 +1067,35 @@ impl ServerChannel {
         }
     }
 
-    /// Get the type of the channel that is stored in the enum.
-    pub fn permission_overwrites(&self) -> &[PermissionOverwrite] {
+    /// Returns `true` if the channel's primary contents are textual.
+    pub fn contains_text(&self) -> bool {
         match self {
-            Self::Text { channel, .. } => channel.permission_overwrites.as_ref(),
-            Self::Voice { channel, .. } => channel.permission_overwrites.as_ref(),
-            Self::Announcement { channel, .. } => channel.permission_overwrites.as_ref(),
-            Self::Category { category, .. } => category.permission_overwrites.as_ref(),
+            Self::Text { .. } => true,
+            Self::Announcement { .. } => true,
+            Self::AnnouncementThread { .. } => true,
+            Self::PublicThread { .. } => true,
+            Self::PrivateThread { .. } => true,
 
-            // what now
-            Self::AnnouncementThread { thread, .. } => &[],
-            Self::PublicThread { thread, .. } => &[],
-            Self::PrivateThread { thread, .. } => &[],
+            Self::Voice { .. } => false,
+            Self::Category { .. } => false,
+        }
+    }
+
+    /// Get the permission overwrites of this channel relative to its parent category.
+    ///
+    /// If this channel is a thread, no overwrites are available, and `None` is returned.
+    /// In this case, you are directed to look for overwrites on the parent channel.
+    pub fn permission_overwrites(&self) -> Option<&[PermissionOverwrite]> {
+        match self {
+            Self::Text { channel, .. } => Some(channel.permission_overwrites.as_ref()),
+            Self::Voice { channel, .. } => Some(channel.permission_overwrites.as_ref()),
+            Self::Announcement { channel, .. } => Some(channel.permission_overwrites.as_ref()),
+            Self::Category { category, .. } => Some(category.permission_overwrites.as_ref()),
+
+            // threads effectively inherit their overwrites from the parent channel
+            Self::AnnouncementThread { .. } => None,
+            Self::PublicThread { .. } => None,
+            Self::PrivateThread { .. } => None,
         }
     }
 }
@@ -1274,7 +1311,7 @@ pub enum ServerThread {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<10>,
+        _type: Eq<10>,
     },
 
     /// A temporary sub-channel within a [TextChannel] or GUILD_FORUM channel
@@ -1285,7 +1322,7 @@ pub enum ServerThread {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<11>,
+        _type: Eq<11>,
     },
 
     /// A temporary sub-channel within a [TextChannel] channel
@@ -1296,7 +1333,7 @@ pub enum ServerThread {
         thread: Thread,
 
         #[doc(hidden)]
-        kind: Eq<12>,
+        _type: Eq<12>,
     },
 }
 
@@ -1310,8 +1347,7 @@ pub struct Thread {
     pub id: ChannelId,
 
     /// The ID of the channel that owns this thread.
-    #[serde(rename = "parent_id")]
-    pub channel_id: ChannelId,
+    pub parent_id: ChannelId,
 
     /// The ID of the server this channel belongs to.
     #[serde(rename = "guild_id")]
@@ -1369,7 +1405,8 @@ pub struct ThreadInfo {
     pub archive_timestamp: DateTime<FixedOffset>,
 
     /// Whether non-moderators can add other non-moderators to a thread; only available on private threads.
-    pub invitable: Option<bool>,
+    #[serde(rename = "invitable")]
+    pub invites_allowed: Option<bool>,
 
     /// timestamp when the thread was created.
     #[serde(rename = "create_timestamp")]
@@ -1565,7 +1602,7 @@ pub enum StickerType {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<1>,
+        _type: Eq<1>,
     },
     Server {
         /// The server this sticker is from.
@@ -1581,7 +1618,7 @@ pub enum StickerType {
 
         #[doc(hidden)]
         #[serde(rename = "type")]
-        kind: Eq<2>,
+        _type: Eq<2>,
     },
 }
 
@@ -2017,7 +2054,7 @@ pub enum ScheduledEventHost {
 
         #[doc(hidden)]
         #[serde(rename = "entity_type")]
-        _kind: Eq<1>,
+        _entity_type: Eq<1>,
     },
 
     /// Schedule an event on a voice channel in the same server.
@@ -2028,7 +2065,7 @@ pub enum ScheduledEventHost {
 
         #[doc(hidden)]
         #[serde(rename = "entity_type")]
-        _kind: Eq<2>,
+        _entity_type: Eq<2>,
     },
 
     /// Schedule an event to be hosted elsewhere.
@@ -2042,7 +2079,7 @@ pub enum ScheduledEventHost {
 
         #[doc(hidden)]
         #[serde(rename = "entity_type")]
-        _kind: Eq<3>,
+        _entity_type: Eq<3>,
     },
 }
 
