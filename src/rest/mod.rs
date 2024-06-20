@@ -10,6 +10,9 @@
 mod channel;
 pub use channel::*;
 
+mod connect;
+pub use connect::*;
+
 mod login;
 pub use login::*;
 
@@ -22,7 +25,12 @@ pub use server::*;
 mod user;
 pub use user::*;
 
-use crate::{error::Result, ratelimit::RateLimits};
+use crate::{
+    error::{CheckStatus, Result},
+    model::{Incident, Maintenance},
+    ratelimit::RateLimits,
+    Object,
+};
 
 use reqwest::{Method, RequestBuilder};
 
@@ -51,12 +59,8 @@ const API_BASE: &'static str = "https://discord.com/api/v6";
 /// as each one of them will be tracking individual detached rate-limiting counters.
 ///
 /// As 99.9% of operations require only immutable access (`&self`) to the client,
-/// courtesy of the rate-limits being held behind a [`Mutex`],
-/// it is best to hold the client behind an [`Rc`] or [`Arc`]
-///
-/// [`Mutex`]: std::sync::Mutex
-/// [`Rc`]: std::rc::Rc
-/// [`Arc`]: std::sync::Arc
+/// courtesy of the rate-limits being held behind a [`Mutex`][std::sync::Mutex],
+/// it is best to hold the client behind an [`Rc`][std::rc::Rc] or [`Arc`][std::sync::Arc]
 #[derive(Debug)]
 pub struct Discord {
     /// Configured `reqwest` client for making request.
@@ -98,4 +102,84 @@ impl Discord {
     async fn empty_request(&self, url: &str, method: Method) -> Result<reqwest::Response> {
         self.request(url, method, |req| req).await
     }
+}
+
+const STATUS_BASE: &'static str = "https://status.discord.com/api/v2";
+macro_rules! status_concat {
+    ($e:expr) => {
+        concat!("https://status.discord.com/api/v2", $e)
+    };
+}
+
+/// Retrieves the current unresolved incidents from the status page.
+pub async fn get_unresolved_incidents() -> Result<Vec<Incident>> {
+    let client = tls_client();
+    let mut response: Object = client
+        .execute(
+            client
+                .get(status_concat!("/incidents/unresolved.json"))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .check_status()
+        .await?
+        .json()
+        .await?;
+
+    match response.remove("incidents") {
+        Some(incidents) => Ok(serde_json::from_value(incidents)?),
+        None => Ok(vec![]),
+    }
+}
+
+/// Retrieves the active maintenances from the status page.
+pub async fn get_active_maintenances() -> Result<Vec<Maintenance>> {
+    let client = tls_client();
+    let mut response: Object = client
+        .execute(
+            client
+                .get(status_concat!("/scheduled-maintenances/active.json"))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .check_status()
+        .await?
+        .json()
+        .await?;
+
+    match response.remove("scheduled_maintenances") {
+        Some(scheduled_maintenances) => Ok(serde_json::from_value(scheduled_maintenances)?),
+        None => Ok(vec![]),
+    }
+}
+
+/// Retrieves the upcoming maintenances from the status page.
+pub async fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
+    let client = tls_client();
+    let mut response: Object = client
+        .execute(
+            client
+                .get(status_concat!("/scheduled-maintenances/upcoming.json"))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .check_status()
+        .await?
+        .json()
+        .await?;
+
+    match response.remove("scheduled_maintenances") {
+        Some(scheduled_maintenances) => Ok(serde_json::from_value(scheduled_maintenances)?),
+        None => Ok(vec![]),
+    }
+}
+
+fn tls_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .https_only(true)
+        .build()
+        .expect("Couldn't build HTTPS reqwest client")
 }

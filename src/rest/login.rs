@@ -15,8 +15,7 @@ const USERBOT_USER_AGENT: &'static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x
 /// Login methods for creating a [`Discord`] API client.
 pub trait LoginExt {
     /// Log in as a bot account using the given bot authentication token.
-    ///
-    /// The token will automatically be prefixed with "Bot ".
+    /// The token will automatically be prefixed with `Bot `.
     fn from_bot_token(token: &str) -> Result<Discord>;
 
     /// Log in as a user account using the given user authentication token.
@@ -25,8 +24,7 @@ pub trait LoginExt {
 
 impl LoginExt for Discord {
     /// Log in as a bot account using the given bot authentication token.
-    ///
-    /// The token will automatically be prefixed with "Bot ".
+    /// The token will automatically be prefixed with `Bot `.
     fn from_bot_token(token: &str) -> Result<Discord> {
         Ok(Discord {
             rate_limits: RateLimits::default(),
