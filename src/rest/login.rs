@@ -1,4 +1,4 @@
-use crate::{ratelimit::RateLimits, Result};
+use crate::{ratelimit::rest::RateLimits, Result};
 
 use super::Discord;
 

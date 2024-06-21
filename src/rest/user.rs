@@ -25,19 +25,17 @@ pub trait UserExt {
     ///
     /// Usable for bot and user accounts. Only allows updating the username and
     /// avatar.
-    fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(
-        &self,
-        f: F,
-    ) -> impl Future<Output = Result<CurrentUser>> + Send;
+    fn edit_profile<F>(&self, f: F) -> impl Future<Output = Result<CurrentUser>> + Send
+    where
+        F: Send + FnOnce(EditProfile) -> EditProfile;
 
     /// Edit the logged-in non-bot user's profile. See `EditUserProfile` for editable fields.
     ///
     /// Usable only for user (non-bot) accounts. Requires mutable access in order
     /// to keep the login token up to date in the event of a password change.
-    fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(
-        &mut self,
-        f: F,
-    ) -> impl Future<Output = Result<CurrentUser>> + Send;
+    fn edit_user_profile<F>(&mut self, f: F) -> impl Future<Output = Result<CurrentUser>> + Send
+    where
+        F: Send + FnOnce(EditUserProfile) -> EditUserProfile;
 
     /// Create a DM channel with the given user,
     /// or return the existing one if it exists.
@@ -72,10 +70,10 @@ impl UserExt for Discord {
         Ok(user)
     }
 
-    async fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(
-        &self,
-        f: F,
-    ) -> Result<CurrentUser> {
+    async fn edit_profile<F>(&self, f: F) -> Result<CurrentUser>
+    where
+        F: Send + FnOnce(EditProfile) -> EditProfile,
+    {
         // First, get the current profile, so that providing username and avatar is optional.
         let user: CurrentUser = self
             .empty_request("/users/@me", Method::GET)
@@ -99,10 +97,10 @@ impl UserExt for Discord {
         Ok(user)
     }
 
-    async fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(
-        &mut self,
-        f: F,
-    ) -> Result<CurrentUser> {
+    async fn edit_user_profile<F>(&mut self, f: F) -> Result<CurrentUser>
+    where
+        F: Send + FnOnce(EditUserProfile) -> EditUserProfile,
+    {
         // First, get the current profile, so that providing username and avatar is optional.
         let user: CurrentUser = self
             .empty_request("/users/@me", Method::GET)

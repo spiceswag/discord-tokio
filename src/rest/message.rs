@@ -55,11 +55,13 @@ pub trait MessageExt {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// Build and send a message to a given channel.
-    fn send_message<F: FnOnce(SendMessage) -> SendMessage>(
+    fn send_message<F>(
         &self,
         channel: ChannelId,
         builder: F,
-    ) -> impl Future<Output = Result<Message>> + Send;
+    ) -> impl Future<Output = Result<Message>> + Send
+    where
+        F: Send + FnOnce(SendMessage) -> SendMessage;
 
     /// Edit a previously posted message by building a new one.
     ///
@@ -68,12 +70,14 @@ pub trait MessageExt {
     ///
     /// Not all fields can be edited; see the [docs] for more.
     /// [docs]: https://discord.com/developers/docs/resources/channel#edit-message
-    fn edit_message<F: FnOnce(SendMessage) -> SendMessage>(
+    fn edit_message<F>(
         &self,
         channel: ChannelId,
         message: MessageId,
         builder: F,
-    ) -> impl Future<Output = Result<Message>> + Send;
+    ) -> impl Future<Output = Result<Message>> + Send
+    where
+        F: Send + FnOnce(SendMessage) -> SendMessage;
 
     /// Send a message to a given channel.
     ///
@@ -122,7 +126,7 @@ pub trait MessageExt {
     ) -> impl Future<Output = Result<Message>>
     where
         R: AsyncRead + Unpin,
-        F: FnOnce(SendMessage) -> SendMessage;
+        F: Send + FnOnce(SendMessage) -> SendMessage;
 
     /// Delete a previously posted message.
     ///
@@ -314,11 +318,10 @@ impl MessageExt for Discord {
         .await
     }
 
-    async fn send_message<F: FnOnce(SendMessage) -> SendMessage>(
-        &self,
-        channel: ChannelId,
-        builder: F,
-    ) -> Result<Message> {
+    async fn send_message<F>(&self, channel: ChannelId, builder: F) -> Result<Message>
+    where
+        F: Send + FnOnce(SendMessage) -> SendMessage,
+    {
         let map = SendMessage::build(builder);
 
         let message = self
@@ -334,12 +337,15 @@ impl MessageExt for Discord {
         Ok(message)
     }
 
-    async fn edit_message<F: FnOnce(SendMessage) -> SendMessage>(
+    async fn edit_message<F>(
         &self,
         channel: ChannelId,
         message: MessageId,
         builder: F,
-    ) -> Result<Message> {
+    ) -> Result<Message>
+    where
+        F: Send + FnOnce(SendMessage) -> SendMessage,
+    {
         let map = SendMessage::build(builder);
 
         let message = self
@@ -566,6 +572,7 @@ impl MessageExt for Discord {
 }
 
 /// Argument to `get_messages` to specify the desired message retrieval.
+#[derive(Debug)]
 pub enum GetMessages {
     /// Get the N most recent messages.
     MostRecent,

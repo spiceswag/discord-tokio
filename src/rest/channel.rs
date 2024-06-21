@@ -26,11 +26,13 @@ pub trait ChannelExt {
     ///     ch.topic("Welcome to the general chat!")
     /// ).await;
     /// ```
-    fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(
+    fn edit_channel<F>(
         &self,
         channel_id: ChannelId,
         f: F,
-    ) -> impl Future<Output = Result<Channel>> + Send;
+    ) -> impl Future<Output = Result<Channel>> + Send
+    where
+        F: Send + FnOnce(EditChannel) -> EditChannel;
 
     /// Delete a channel, or close a private message.
     ///
@@ -145,11 +147,10 @@ impl ChannelExt for Discord {
         Ok(channel)
     }
 
-    async fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(
-        &self,
-        channel_id: ChannelId,
-        f: F,
-    ) -> Result<Channel> {
+    async fn edit_channel<F>(&self, channel_id: ChannelId, f: F) -> Result<Channel>
+    where
+        F: Send + FnOnce(EditChannel) -> EditChannel,
+    {
         let channel = match self.get_channel(channel_id).await? {
             Channel::DirectMessage(_) => return Err(Error::Other("Can not edit private channels")),
             channel @ _ => channel,

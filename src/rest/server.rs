@@ -80,11 +80,13 @@ pub trait ServerExt {
     ///     .region("us-south")
     /// ).await;
     /// ```
-    fn edit_server<F: FnOnce(EditServer) -> EditServer>(
+    fn edit_server<F>(
         &self,
         server_id: ServerId,
         f: F,
-    ) -> impl Future<Output = Result<Server>> + Send;
+    ) -> impl Future<Output = Result<Server>> + Send
+    where
+        F: Send + FnOnce(EditServer) -> EditServer;
 
     /// Delete the given server. Only available to the server owner.
     fn delete_server(&self, server: ServerId) -> impl Future<Output = Result<Server>> + Send;
@@ -220,12 +222,14 @@ pub trait ServerExt {
     /// Edit member information, including roles, nickname, and voice state.
     ///
     /// See the `EditMember` struct for the editable fields.
-    fn edit_member<F: FnOnce(EditMember) -> EditMember>(
+    fn edit_member<F>(
         &self,
         server: ServerId,
         user: UserId,
         f: F,
-    ) -> impl Future<Output = Result<()>> + Send;
+    ) -> impl Future<Output = Result<()>> + Send
+    where
+        F: Send + FnOnce(EditMember) -> EditMember;
 
     /// Change the server nickname of another user.
     ///
@@ -259,19 +263,23 @@ pub trait ServerExt {
     ) -> impl Future<Output = Result<Role>> + Send;
 
     /// Create a new role on a server.
-    fn create_role_from_builder<F: FnOnce(EditRole) -> EditRole>(
+    fn create_role_from_builder<F>(
         &self,
         server: ServerId,
         f: F,
-    ) -> impl Future<Output = Result<Role>> + Send;
+    ) -> impl Future<Output = Result<Role>> + Send
+    where
+        F: Send + FnOnce(EditRole) -> EditRole;
 
     /// Modify a role on a server.
-    fn edit_role<F: FnOnce(EditRole) -> EditRole>(
+    fn edit_role<F>(
         &self,
         server: ServerId,
         role: RoleId,
         f: F,
-    ) -> impl Future<Output = Result<Role>> + Send;
+    ) -> impl Future<Output = Result<Role>> + Send
+    where
+        F: Send + FnOnce(EditRole) -> EditRole;
 
     /// Reorder the roles on a server.
     fn reorder_roles(
@@ -399,11 +407,10 @@ impl ServerExt for Discord {
         Ok(server)
     }
 
-    async fn edit_server<F: FnOnce(EditServer) -> EditServer>(
-        &self,
-        server_id: ServerId,
-        f: F,
-    ) -> Result<Server> {
+    async fn edit_server<F>(&self, server_id: ServerId, f: F) -> Result<Server>
+    where
+        F: Send + FnOnce(EditServer) -> EditServer,
+    {
         let map = EditServer::build(f);
 
         let server = self
@@ -643,12 +650,10 @@ impl ServerExt for Discord {
         .await
     }
 
-    async fn edit_member<F: FnOnce(EditMember) -> EditMember>(
-        &self,
-        server: ServerId,
-        user: UserId,
-        f: F,
-    ) -> Result<()> {
+    async fn edit_member<F>(&self, server: ServerId, user: UserId, f: F) -> Result<()>
+    where
+        F: Send + FnOnce(EditMember) -> EditMember,
+    {
         let map = EditMember::build(f);
 
         self.request(
@@ -717,11 +722,10 @@ impl ServerExt for Discord {
         Ok(role)
     }
 
-    async fn create_role_from_builder<F: FnOnce(EditRole) -> EditRole>(
-        &self,
-        server: ServerId,
-        f: F,
-    ) -> Result<Role> {
+    async fn create_role_from_builder<F>(&self, server: ServerId, f: F) -> Result<Role>
+    where
+        F: Send + FnOnce(EditRole) -> EditRole,
+    {
         let map = EditRole::build(f);
 
         let role = self
@@ -735,12 +739,10 @@ impl ServerExt for Discord {
         Ok(role)
     }
 
-    async fn edit_role<F: FnOnce(EditRole) -> EditRole>(
-        &self,
-        server: ServerId,
-        role: RoleId,
-        f: F,
-    ) -> Result<Role> {
+    async fn edit_role<F>(&self, server: ServerId, role: RoleId, f: F) -> Result<Role>
+    where
+        F: Send + FnOnce(EditRole) -> EditRole,
+    {
         let map = EditRole::build(f);
 
         let role = self
