@@ -29,20 +29,20 @@
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
-mod connection;
-mod error;
-mod ratelimit;
-mod state;
-
-mod rest;
-pub use rest::*;
-
 macro_rules! cdn_concat {
     ($e:expr) => {
         // Out of everything, only the CDN still uses the old domain.
         concat!("https://cdn.discordapp.com", $e)
     };
 }
+
+pub mod builders;
+
+mod connection;
+pub use connection::Connection;
+
+mod error;
+pub use error::{Error, Result};
 
 /// Struct and enum definitions of values in the Discord model.
 pub mod model {
@@ -56,15 +56,21 @@ pub mod model {
     pub use live::*;
 }
 
-// #[cfg(feature = "voice")]
-// pub mod voice;
+mod ratelimit {
+    pub mod rest;
+}
+
+mod rest;
+pub use rest::*;
+
+mod state;
+pub use state::{ChannelRef, State};
 
 #[macro_use]
 mod serial;
-pub mod builders;
 
-pub use error::{Error, Result};
-pub use state::{ChannelRef, State};
+// #[cfg(feature = "voice")]
+// pub mod voice;
 
 /// Read an image from a file into a string suitable for upload.
 ///

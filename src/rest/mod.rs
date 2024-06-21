@@ -14,6 +14,7 @@ mod connect;
 pub use connect::*;
 
 mod login;
+use futures::future::OptionFuture;
 pub use login::*;
 
 mod message;
@@ -28,7 +29,7 @@ pub use user::*;
 use crate::{
     error::{CheckStatus, Result},
     model::{Incident, Maintenance},
-    ratelimit::RateLimits,
+    ratelimit::rest::RateLimits,
     Object,
 };
 
@@ -79,7 +80,7 @@ impl Discord {
         method: Method,
         builder: F,
     ) -> Result<reqwest::Response> {
-        self.rate_limits.pre_check(url).await;
+        OptionFuture::from(self.rate_limits.check(url)).await;
 
         let request = self.client.request(
             method,
@@ -93,7 +94,10 @@ impl Discord {
         let request = builder(request);
 
         // todo retries
-        Ok(request.send().await?)
+        let response = request.send().await?;
+        self.rate_limits.update(url, &response);
+
+        Ok(response)
     }
 
     /// Make a request while having rate limits, retries, and authorization taken care of.
@@ -104,7 +108,6 @@ impl Discord {
     }
 }
 
-const STATUS_BASE: &'static str = "https://status.discord.com/api/v2";
 macro_rules! status_concat {
     ($e:expr) => {
         concat!("https://status.discord.com/api/v2", $e)
