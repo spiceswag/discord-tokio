@@ -1,9 +1,14 @@
 use std::collections::BTreeMap;
 
+use futures::Future;
 use reqwest::Method;
 
 use crate::{connection::Connection, model::ReadyEvent, Discord, Error, Object, Result};
 
+/// Discord Rest API methods for preparing and establishing a gateway connection.
+///
+/// This trait is not meant to be implemented by any type
+/// except the [`Discord`] Rest API client provided by this crate.
 pub trait ConnectExt {
     /// Establish a websocket connection over which events can be received.
     ///
@@ -11,7 +16,7 @@ pub trait ConnectExt {
     /// connection, which contains the initial state as seen by the client.
     ///
     /// See `connect_sharded` if you want to use guild sharding.
-    async fn connect(&self) -> Result<(Connection, ReadyEvent)>;
+    fn connect(&self) -> impl Future<Output = Result<(Connection, ReadyEvent)>> + Send;
 
     /// Establish a sharded websocket connection over which events can be received.
     /// The `shard_id` is indexed at 0 while `total_shards` is indexed at 1.
@@ -20,15 +25,15 @@ pub trait ConnectExt {
     /// connection, which contains the initial state as seen by the client.
     ///
     /// See `connect` if you do not want to use guild sharding.
-    async fn connect_sharded(
+    fn connect_sharded(
         &self,
         shard_id: u8,
         total_shards: u8,
-    ) -> Result<(Connection, ReadyEvent)>;
+    ) -> impl Future<Output = Result<(Connection, ReadyEvent)>> + Send;
 
     /// Retrieves the number of guild shards Discord suggests to use based on the number of guilds.
     /// This endpoint is only available for bots.
-    async fn suggested_shard_count(&self) -> Result<u8>;
+    fn suggested_shard_count(&self) -> impl Future<Output = Result<u8>> + Send;
 }
 
 impl ConnectExt for Discord {

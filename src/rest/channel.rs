@@ -1,3 +1,4 @@
+use futures::Future;
 use reqwest::Method;
 use serde_json::json;
 
@@ -15,7 +16,7 @@ use super::Discord;
 /// Discord REST API methods for modifying channels and threads.
 pub trait ChannelExt {
     /// Get information about a channel.
-    async fn get_channel(&self, channel: ChannelId) -> Result<Channel>;
+    fn get_channel(&self, channel: ChannelId) -> impl Future<Output = Result<Channel>> + Send;
 
     /// Edit a channel's details. See `EditChannel` for the editable fields.
     ///
@@ -25,11 +26,11 @@ pub trait ChannelExt {
     ///     ch.topic("Welcome to the general chat!")
     /// ).await;
     /// ```
-    async fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(
+    fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(
         &self,
         channel_id: ChannelId,
         f: F,
-    ) -> Result<Channel>;
+    ) -> impl Future<Output = Result<Channel>> + Send;
 
     /// Delete a channel, or close a private message.
     ///
@@ -39,7 +40,7 @@ pub trait ChannelExt {
     /// Deleting a server channel cannot be undone.
     /// Use this with caution, as it is impossible to undo this action when performed on a server channel.
     /// In contrast, when used with a private message, it is possible to undo the action by opening a private message with the recipient again.
-    async fn delete_channel(&self, channel: ChannelId) -> Result<Channel>;
+    fn delete_channel(&self, channel: ChannelId) -> impl Future<Output = Result<Channel>> + Send;
 
     /// Create permissions for a `Channel` for a `Member` or `Role`.
     ///
@@ -74,11 +75,11 @@ pub trait ChannelExt {
     ///	};
     /// let result = discord.create_permission(channel.id, target).await;
     /// ```
-    async fn create_permission(
+    fn create_permission(
         &self,
         channel: ChannelId,
         permission: PermissionOverwrite,
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete a `Member` or `Role`'s permissions for a `Channel`.
     ///
@@ -105,28 +106,32 @@ pub trait ChannelExt {
     /// let target = role.id.0;
     /// let response = discord.delete_permission(channel.id, target).await;
     /// ```
-    async fn delete_permission(
+    fn delete_permission(
         &self,
         channel: ChannelId,
         overwrite: PermissionOverwriteId,
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Indicate typing on a channel for the next 5 seconds.
-    async fn broadcast_typing(&self, channel: ChannelId) -> Result<()>;
+    fn broadcast_typing(&self, channel: ChannelId) -> impl Future<Output = Result<()>> + Send;
 
     /// Acknowledge this message as "read" by this client.
-    async fn ack_message(&self, channel: ChannelId, message: MessageId) -> Result<()>;
+    fn ack_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Get the list of available voice regions for the current client.
-    async fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>>;
+    fn get_voice_regions(&self) -> impl Future<Output = Result<Vec<VoiceRegion>>> + Send;
 
     /// Move a server member to another voice channel.
-    async fn move_member_voice(
+    fn move_member_voice(
         &self,
         server: ServerId,
         user: UserId,
         channel: ChannelId,
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 impl ChannelExt for Discord {

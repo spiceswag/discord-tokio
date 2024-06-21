@@ -1,3 +1,4 @@
+use futures::Future;
 use reqwest::Method;
 use serde_json::json;
 
@@ -15,41 +16,39 @@ use super::Discord;
 pub trait UserExt {
     /// Get information about a user.
     /// https://discord.com/developers/docs/resources/user#get-user
-    async fn get_user(&self, user: UserId) -> Result<User>;
+    fn get_user(&self, user: UserId) -> impl Future<Output = Result<User>> + Send;
 
     /// Get the logged-in user's profile.
-    async fn get_current_user(&self) -> Result<CurrentUser>;
+    fn get_current_user(&self) -> impl Future<Output = Result<CurrentUser>> + Send;
 
     /// Edit the logged-in bot or user's profile. See `EditProfile` for editable fields.
     ///
     /// Usable for bot and user accounts. Only allows updating the username and
     /// avatar.
-    async fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(
+    fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(
         &self,
         f: F,
-    ) -> Result<CurrentUser>;
+    ) -> impl Future<Output = Result<CurrentUser>> + Send;
 
     /// Edit the logged-in non-bot user's profile. See `EditUserProfile` for editable fields.
     ///
     /// Usable only for user (non-bot) accounts. Requires mutable access in order
     /// to keep the login token up to date in the event of a password change.
-    async fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(
+    fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(
         &mut self,
         f: F,
-    ) -> Result<CurrentUser>;
+    ) -> impl Future<Output = Result<CurrentUser>> + Send;
 
     /// Create a DM channel with the given user,
     /// or return the existing one if it exists.
-    async fn create_dm(&self, recipient: UserId) -> Result<DirectMessage>;
+    fn create_dm(&self, recipient: UserId) -> impl Future<Output = Result<DirectMessage>> + Send;
 
-    /// Sets a note for the user that is readable only to the currently logged
-    /// in user.
-    ///
+    /// Sets a note for the user that is readable only to the currently logged in user.
     /// This endpoint is only available for users, and does not work for bots.
-    async fn edit_note(&self, user: UserId, note: &str) -> Result<()>;
+    fn edit_note(&self, user: UserId, note: &str) -> impl Future<Output = Result<()>> + Send;
 
     /// Retrieves information about the current application and its owner.
-    async fn get_application_info(&self) -> Result<ApplicationInfo>;
+    fn get_application_info(&self) -> impl Future<Output = Result<ApplicationInfo>> + Send;
 }
 
 impl UserExt for Discord {

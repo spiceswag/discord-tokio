@@ -1,3 +1,4 @@
+use futures::Future;
 use reqwest::Method;
 use serde_json::json;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -13,7 +14,11 @@ use super::Discord;
 /// Discord REST API methods for sending, editing, pining and otherwise interact with sent messages.
 pub trait MessageExt {
     /// Get a single message by ID from a given channel.
-    async fn get_message(&self, channel: ChannelId, message: MessageId) -> Result<Message>;
+    fn get_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl Future<Output = Result<Message>> + Send;
 
     /// Get messages in the backlog for a given channel.
     ///
@@ -21,32 +26,40 @@ pub trait MessageExt {
     /// enum, and will determine which messages will be returned. A message
     /// limit can also be specified, and defaults to 50. More recent messages
     /// will appear first in the list.
-    async fn get_messages(
+    fn get_messages(
         &self,
         channel: ChannelId,
         what: GetMessages,
         limit: Option<u64>,
-    ) -> Result<Vec<Message>>;
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
 
     /// Gets a list of the pinned messages for a given channel.
-    async fn get_pins(&self, channel: ChannelId) -> Result<Vec<Message>>;
+    fn get_pins(&self, channel: ChannelId) -> impl Future<Output = Result<Vec<Message>>> + Send;
 
     /// Pin the given message to the given channel.
     ///
     /// Requires that the logged in user has the `MANAGE_MESSAGES` permission.
-    async fn pin_message(&self, channel: ChannelId, message: MessageId) -> Result<()>;
+    fn pin_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Removes the given message from being pinned to the given channel.
     ///
     /// Requires that the logged in user has the `MANAGE_MESSAGES` permission.
-    async fn unpin_message(&self, channel: ChannelId, message: MessageId) -> Result<()>;
+    fn unpin_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Build and send a message to a given channel.
-    async fn send_message<F: FnOnce(SendMessage) -> SendMessage>(
+    fn send_message<F: FnOnce(SendMessage) -> SendMessage>(
         &self,
         channel: ChannelId,
         builder: F,
-    ) -> Result<Message>;
+    ) -> impl Future<Output = Result<Message>> + Send;
 
     /// Edit a previously posted message by building a new one.
     ///
@@ -55,44 +68,44 @@ pub trait MessageExt {
     ///
     /// Not all fields can be edited; see the [docs] for more.
     /// [docs]: https://discord.com/developers/docs/resources/channel#edit-message
-    async fn edit_message<F: FnOnce(SendMessage) -> SendMessage>(
+    fn edit_message<F: FnOnce(SendMessage) -> SendMessage>(
         &self,
         channel: ChannelId,
         message: MessageId,
         builder: F,
-    ) -> Result<Message>;
+    ) -> impl Future<Output = Result<Message>> + Send;
 
     /// Send a message to a given channel.
     ///
     /// The `nonce` will be returned in the result and also transmitted to other
     /// clients. The empty string is a good default if you don't care.
-    async fn send_text_message(
+    fn send_text_message(
         &self,
         channel: ChannelId,
         text: &str,
         nonce: &str,
-    ) -> Result<Message>;
+    ) -> impl Future<Output = Result<Message>> + Send;
 
     /// Edit the text portion of a previously posted message.
     ///
     /// Requires that either the message was posted by this user, or this user
     /// has permission to manage other members' messages.
-    async fn edit_text_message(
+    fn edit_text_message(
         &self,
         channel: ChannelId,
         message: MessageId,
         text: &str,
-    ) -> Result<Message>;
+    ) -> impl Future<Output = Result<Message>> + Send;
 
     /// Send a message with file attachments to a given channel.
     ///
     /// The filenames will be replaced with "file" if equal to `Some("")` or `None`.
-    async fn send_message_with_files<R, F>(
+    fn send_message_with_files<R, F>(
         &self,
         channel: ChannelId,
         message: F,
         files: Vec<(Option<&str>, &mut R)>,
-    ) -> Result<Message>
+    ) -> impl Future<Output = Result<Message>>
     where
         R: AsyncRead + Unpin,
         F: FnOnce(SendMessage) -> SendMessage;
@@ -100,13 +113,13 @@ pub trait MessageExt {
     /// Send a message with a file attachment to a given channel.
     ///
     /// The filename will be replaced with "file" if equal to `Some("")` or `None`.
-    async fn send_message_with_file<R, F>(
+    fn send_message_with_file<R, F>(
         &self,
         message: ChannelId,
         builder: F,
         file: &mut R,
         file_name: Option<&str>,
-    ) -> Result<Message>
+    ) -> impl Future<Output = Result<Message>>
     where
         R: AsyncRead + Unpin,
         F: FnOnce(SendMessage) -> SendMessage;
@@ -115,7 +128,11 @@ pub trait MessageExt {
     ///
     /// Requires that either the message was posted by this user, or this user
     /// has permission to manage other members' messages.
-    async fn delete_message(&self, channel: ChannelId, message: MessageId) -> Result<()>;
+    fn delete_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Bulk deletes a list of messages by ID from a given channel.
     ///
@@ -130,7 +147,11 @@ pub trait MessageExt {
     ///
     /// Requires that either the message was posted by this user, or this user
     /// has permission to manage other members' messages.
-    async fn delete_messages(&self, channel: ChannelId, messages: &[MessageId]) -> Result<()>;
+    fn delete_messages(
+        &self,
+        channel: ChannelId,
+        messages: &[MessageId],
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Add a `Reaction` to a `Message`.
     ///
@@ -159,12 +180,12 @@ pub trait MessageExt {
     /// ```
     ///
     /// Requires the `ADD_REACTIONS` permission to add a new reaction.
-    async fn add_reaction(
+    fn add_reaction(
         &self,
         channel: ChannelId,
         message: MessageId,
         emoji: ReactionEmoji,
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete a `Reaction` from a `Message`.
     ///
@@ -206,26 +227,26 @@ pub trait MessageExt {
     /// ```
     ///
     /// Requires `MANAGE_MESSAGES` if deleting someone else's `Reaction`.
-    async fn delete_reaction(
+    fn delete_reaction(
         &self,
         channel: ChannelId,
         message: MessageId,
         user_id: Option<UserId>,
         emoji: ReactionEmoji,
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Get users that have reacted with a given `Emoji` in a `Message`.
     ///
     /// The default `limit` is 50. The optional value of `after` is the ID of
     /// the user to retrieve the next reactions after.
-    async fn get_reactions(
+    fn get_reactions(
         &self,
         channel: ChannelId,
         message: MessageId,
         emoji: ReactionEmoji,
         limit: Option<i32>,
         after: Option<UserId>,
-    ) -> Result<Vec<User>>;
+    ) -> impl Future<Output = Result<Vec<User>>> + Send;
 }
 
 impl MessageExt for Discord {
