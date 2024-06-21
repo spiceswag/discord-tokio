@@ -98,66 +98,6 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
     }
 }
 
-/// Special support for the oddly complex `ReactionEmoji`.
-pub mod reaction_emoji {
-    use super::*;
-    use crate::model::{EmojiId, ReactionEmoji};
-
-    #[derive(Serialize)]
-    struct EmojiSer<'s> {
-        name: &'s str,
-        id: Option<EmojiId>,
-        animated: Option<bool>,
-    }
-
-    #[derive(Deserialize)]
-    struct EmojiDe {
-        name: String,
-        id: Option<EmojiId>,
-        animated: Option<bool>,
-    }
-
-    pub fn serialize<S: Serializer>(v: &ReactionEmoji, s: S) -> Result<S::Ok, S::Error> {
-        (match *v {
-            ReactionEmoji::Unicode { ref name } => EmojiSer {
-                name: name,
-                id: None,
-                animated: None,
-            },
-            ReactionEmoji::Custom {
-                ref name,
-                id,
-                animated,
-            } => EmojiSer {
-                id: Some(id),
-                name: name,
-                animated: Some(animated),
-            },
-        })
-        .serialize(s)
-    }
-
-    pub fn deserialize<'d, D: Deserializer<'d>>(d: D) -> Result<ReactionEmoji, D::Error> {
-        Ok(match EmojiDe::deserialize(d)? {
-            EmojiDe {
-                name,
-                id: None,
-                animated: None,
-            } => ReactionEmoji::Unicode { name },
-            EmojiDe {
-                name,
-                id: Some(id),
-                animated: Some(animated),
-            } => ReactionEmoji::Custom { name, id, animated },
-            _ => {
-                return Err(Error::custom(
-                    "unexpected combination of fields `id` and `animated`",
-                ))
-            }
-        })
-    }
-}
-
 /// Make sure a field holds a certain numeric value, or fail otherwise.
 #[derive(Debug, Clone)]
 pub struct Eq<const N: u64>;

@@ -17,7 +17,7 @@ macro_rules! builder {
     ($(#[$attr:meta] $name:ident($inner:ty);)*) => {
         $(
             #[$attr]
-            #[derive(Serialize, Deserialize)]
+            #[derive(Debug, Serialize, Deserialize)]
             pub struct $name($inner);
 
             impl $name {

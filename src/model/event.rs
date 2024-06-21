@@ -11,9 +11,9 @@ use crate::serial::Eq;
 use super::{
     Activity, Attachment, Call, Channel, ChannelId, CurrentUser, CurrentUserPatch, Emoji,
     FriendSourceFlags, LiveServer, Member, Message, MessageId, MessageType, OnlineStatus,
-    PossibleServer, Presence, Relationship, RelationshipType, Role, RoleId, Server, ServerId,
-    SingleReaction, Tutorial, UnreadMessages, User, UserId, UserServerSettings, UserSettings,
-    VoiceState,
+    PossibleServer, Presence, PrivateChannel, Relationship, RelationshipType, Role, RoleId, Server,
+    ServerId, SingleReaction, Tutorial, UnreadMessages, User, UserId, UserServerSettings,
+    UserSettings, VoiceState,
 };
 
 /// A JSON payload message sent to the gateway.
@@ -499,6 +499,10 @@ pub struct ReadyEvent {
     /// The trace of discord gateway servers involved in serving this connection.
     #[serde(rename = "_trace")]
     pub trace: Option<Vec<String>>,
+
+    /// For a non-bot user, this is their list of direct messages with other users.
+    /// This field is suspected to exist, but not confirmed.
+    pub private_channels: Option<Vec<PrivateChannel>>,
 }
 
 // Voice

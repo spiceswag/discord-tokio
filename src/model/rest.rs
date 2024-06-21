@@ -879,11 +879,21 @@ pub enum Channel {
     Server(ServerChannel),
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum PrivateChannel {
+    DirectMessage(DirectMessage),
+    Group(Group),
+}
+
 /// Private text channel to another user.
 ///
 /// https://discord.com/developers/docs/resources/channel#channel-object
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DirectMessage {
+    #[serde(rename = "type")]
+    pub _type: Eq<1>,
+
     /// The ID of the DM
     pub id: ChannelId,
 
@@ -898,14 +908,14 @@ pub struct DirectMessage {
     /// The peer at the other side of the DM
     #[serde(rename = "recipients")]
     pub recipient: [User; 1],
-
-    #[serde(rename = "type")]
-    pub _type: Eq<1>,
 }
 
 /// A group channel, potentially including other users, separate from a server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
+    #[serde(rename = "type")]
+    pub _type: Eq<3>,
+
     /// The ID of the group chat
     pub id: ChannelId,
 
@@ -931,9 +941,6 @@ pub struct Group {
 
     /// The members of the group chat.
     pub recipients: Vec<User>,
-
-    #[serde(rename = "type")]
-    pub _type: Eq<3>,
 }
 
 impl Group {
@@ -1054,6 +1061,7 @@ pub enum ServerChannel {
 
 impl ServerChannel {
     /// Access the ID of the channel this `enum` represents.
+    #[inline]
     pub fn id(&self) -> &ChannelId {
         match self {
             Self::Text { channel, .. } => &channel.id,
@@ -1066,7 +1074,22 @@ impl ServerChannel {
         }
     }
 
+    /// Access the ID of this channel's server.
+    #[inline]
+    pub fn server_id(&self) -> &ServerId {
+        match self {
+            Self::Text { channel, .. } => &channel.server_id,
+            Self::Voice { channel, .. } => &channel.server_id,
+            Self::Announcement { channel, .. } => &channel.server_id,
+            Self::Category { category, .. } => &category.server_id,
+            Self::AnnouncementThread { thread, .. } => &thread.server_id,
+            Self::PublicThread { thread, .. } => &thread.server_id,
+            Self::PrivateThread { thread, .. } => &thread.server_id,
+        }
+    }
+
     /// Get the type of the channel that is stored in the enum.
+    #[inline]
     pub fn kind(&self) -> ChannelType {
         match self {
             Self::Text { .. } => ChannelType::Text,
@@ -1120,7 +1143,7 @@ pub struct TextChannel {
 
     /// The ID of the server this channel belongs to.
     #[serde(rename = "guild_id")]
-    pub server_id: Option<ServerId>,
+    pub server_id: ServerId,
 
     /// The name of the channel.
     pub name: String,
@@ -1174,7 +1197,7 @@ pub struct VoiceChannel {
 
     /// The ID of the server this channel belongs to.
     #[serde(rename = "guild_id")]
-    pub server_id: Option<ServerId>,
+    pub server_id: ServerId,
 
     /// The name of the channel.
     pub name: String,
@@ -1238,7 +1261,7 @@ pub struct ChannelCategory {
 
     /// The ID of the server this category is found it
     #[serde(rename = "guild_id")]
-    pub server_id: Option<ServerId>,
+    pub server_id: ServerId,
 
     /// The name of the category
     pub name: String,
@@ -1265,7 +1288,7 @@ pub struct AnnouncementChannel {
 
     /// The ID of the server this channel belongs to.
     #[serde(rename = "guild_id")]
-    pub server_id: Option<ServerId>,
+    pub server_id: ServerId,
 
     /// The name of the channel.
     pub name: String,
@@ -1363,7 +1386,7 @@ pub struct Thread {
 
     /// The ID of the server this channel belongs to.
     #[serde(rename = "guild_id")]
-    pub server_id: Option<ServerId>,
+    pub server_id: ServerId,
 
     /// The name of the thread.
     pub name: String,

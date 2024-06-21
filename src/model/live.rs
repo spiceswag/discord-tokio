@@ -187,9 +187,6 @@ pub struct LiveServer {
     /// States of members currently in voice channels; lacks the `server_id` field.
     pub voice_states: Vec<VoiceState>,
 
-    /// The server's members.
-    pub members: Vec<Member>,
-
     /// Non-thread channels in a server.
     pub channels: Vec<ServerChannel>,
     /// All the threads visible to the user.
@@ -202,6 +199,12 @@ pub struct LiveServer {
     /// All scheduled events in the server.
     #[serde(rename = "guild_scheduled_events")]
     pub scheduled_events: Vec<ScheduledEvent>,
+    
+    /// The server's members.
+    pub members: Vec<Member>,
+    
+    /// The presences of the server's members.
+    pub presences: Vec<Presence>,
 }
 
 impl LiveServer {
@@ -480,11 +483,12 @@ bitflags! {
 
 // Presence
 
-/// A members's online status
+/// A members's presence data.
+/// This structure does not apply for the current user, as more fields are available. 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Presence {
     /// The user this ID belongs to
-    pub user_id: UserId,
+    pub user: User,
 
     /// The status of this user
     pub status: OnlineStatus,

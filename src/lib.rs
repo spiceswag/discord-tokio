@@ -66,8 +66,6 @@ pub mod builders;
 pub use error::{Error, Result};
 pub use state::{ChannelRef, State};
 
-const API_BASE: &'static str = "https://discord.com/api/v6";
-
 /// Read an image from a file into a string suitable for upload.
 ///
 /// If the file's extension is `.png`, the claimed media type will be `image/png`, or `image/jpg`
